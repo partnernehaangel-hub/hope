@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.subraimission.app',
-  appName: 'Subrai Mission Convent School',
+  appName: 'Hope English School',
   webDir: 'dist',
   plugins: {
     SplashScreen: {

@@ -13992,37 +13992,55 @@ const IncomeExpenseView = ({ incomes, setIncomes, expenses, setExpenses, incomeH
 };
 
 const downloadAPK = (type: 'student' | 'staff') => {
-  // We cannot generate a valid binary APK file directly from browser memory.
-  // Instead, we provide the user with the REAL live link to the software.
   const appUrl = window.location.origin;
   
   const modalHtml = `
-    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px;">
-      <div style="background: white; border-radius: 24px; max-width: 400px; width: 100%; padding: 32px; text-align: center; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
-        <button id="close-apk-modal" style="position: absolute; top: 16px; right: 16px; border: none; background: #f1f5f9; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-weight: bold;">✕</button>
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.85); backdrop-filter: blur(8px); z-index: 9999; display: flex; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px;">
+      <div style="background: white; border-radius: 32px; max-width: 480px; width: 100%; padding: 40px; text-align: center; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border: 1px solid rgba(226,232,240,0.8); overflow-y: auto; max-height: 90vh;">
+        <button id="close-apk-modal" style="position: absolute; top: 20px; right: 20px; border: none; background: #e2e8f0; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: bold; color: #475569; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✕</button>
         
-        <div style="background: #eef2ff; width: 64px; height: 64px; border-radius: 20px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; color: #4f46e5;">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <div style="background: #eff6ff; width: 72px; height: 72px; border-radius: 24px; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; color: #2f5d9f;">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
         </div>
         
-        <h2 style="font-weight: 900; font-size: 20px; margin-bottom: 8px; color: #1e293b; text-transform: uppercase; letter-spacing: -0.025em;">Install Mobile App</h2>
-        <p style="color: #64748b; font-size: 14px; margin-bottom: 24px;">Scan this QR code with your phone to open the official <b>Subrai Mission</b> app instantly.</p>
+        <h2 style="font-weight: 900; font-size: 20px; margin-bottom: 8px; color: #0f172a; text-transform: uppercase; letter-spacing: -0.025em;">Install Hope English School App</h2>
+        <p style="color: #64748b; font-size: 13px; margin-bottom: 28px; font-weight: 500;">Get the school App built natively for your mobile phone! Choose your preferred method below.</p>
         
-        <div style="background: white; padding: 12px; border: 2px solid #f1f5f9; border-radius: 20px; display: inline-block; margin-bottom: 24px;">
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${appUrl}" style="width: 180px; height: 180px; display: block;" referrerPolicy="no-referrer" / alt="" />
+        <div style="display: flex; gap: 8px; background: #f1f5f9; padding: 4px; border-radius: 16px; margin-bottom: 24px;">
+          <button id="tab-apk" style="flex: 1; border: none; background: white; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #2f5d9f; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 50%;">DIRECT APK (ANDROID)</button>
+          <button id="tab-pwa" style="flex: 1; border: none; background: transparent; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #64748b; cursor: pointer; width: 50%;">PWA (ADD TO HOME)</button>
         </div>
-        
-        <div style="background: #f8fafc; padding: 16px; border-radius: 16px; text-align: left; margin-bottom: 24px;">
-          <p style="font-weight: 800; font-size: 11px; color: #475569; text-transform: uppercase; margin-bottom: 8px;">Instructions:</p>
-          <ul style="margin: 0; padding-left: 18px; color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.6;">
-            <li>Open this link on your mobile browser (Chrome/Safari).</li>
-            <li><b>IMPORTANT:</b> If you see a "403" error, make sure you are opening the <b>SHARED</b> link, not the editing link.</li>
-            <li>Tap the browser "Share" or "..." menu button.</li>
-            <li>Select <b>"Add to Home Screen"</b>.</li>
-          </ul>
+
+        <div id="content-apk" style="display: block;">
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 18px; border-radius: 20px; text-align: left; margin-bottom: 24px;">
+            <p style="font-weight: 800; font-size: 11px; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">🚀 Native Android Application:</p>
+            <ul style="margin: 0; padding-left: 18px; color: #166534; font-size: 12px; font-weight: 500; line-height: 1.6;">
+              <li>Instant loading with local caching.</li>
+              <li>Supports real-time push alerts and announcements.</li>
+              <li>Secured native Camera capture for QR logins.</li>
+              <li>Direct file and report card PDF exports.</li>
+            </ul>
+          </div>
+          
+          <a href="/Hope_English_School.apk" download="Hope_English_School.apk" style="display: block; width: 100%; background: #2f5d9f; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-shadow: 0 4px 12px rgba(47,93,159,0.3); box-sizing: border-box;">Download Native APK</a>
         </div>
-        
-        <a href="${appUrl}" target="_blank" style="display: block; width: 100%; background: #4f46e5; color: white; text-decoration: none; padding: 16px; border-radius: 16px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s;">Open App Link</a>
+
+        <div id="content-pwa" style="display: none;">
+          <div style="background: white; padding: 12px; border: 2px solid #f1f5f9; border-radius: 24px; display: inline-block; margin-bottom: 24px;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${appUrl}" style="width: 160px; height: 160px; display: block;" referrerPolicy="no-referrer" alt="QR" />
+          </div>
+          
+          <div style="background: #f8fafc; padding: 18px; border-radius: 20px; text-align: left; margin-bottom: 24px;">
+            <p style="font-weight: 800; font-size: 11px; color: #475569; text-transform: uppercase; margin-bottom: 8px;">PWA Install Instructions:</p>
+            <ul style="margin: 0; padding-left: 18px; color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.6;">
+              <li>Scan the QR code with Chrome/Safari on your smartphone.</li>
+              <li>Tap the browser "Share" or settings Menu icon.</li>
+              <li>Press "Add to Home Screen" to run instantly.</li>
+            </ul>
+          </div>
+          
+          <a href="${appUrl}" target="_blank" style="display: block; width: 100%; background: #0f172a; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-sizing: border-box;">Open App Link</a>
+        </div>
       </div>
     </div>
   `;
@@ -14032,7 +14050,35 @@ const downloadAPK = (type: 'student' | 'staff') => {
   div.innerHTML = modalHtml;
   document.body.appendChild(div);
   
-  document.getElementById('close-apk-modal')?.addEventListener('click', () => {
+  const btnApk = document.getElementById('tab-apk');
+  const btnPwa = document.getElementById('tab-pwa');
+  const contentApk = document.getElementById('content-apk');
+  const contentPwa = document.getElementById('content-pwa');
+  const closeBtn = document.getElementById('close-apk-modal');
+
+  btnApk?.addEventListener('click', () => {
+    btnApk.style.background = 'white';
+    btnApk.style.color = '#2f5d9f';
+    btnApk.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+    btnPwa!.style.background = 'transparent';
+    btnPwa!.style.color = '#64748b';
+    btnPwa!.style.boxShadow = 'none';
+    contentApk!.style.display = 'block';
+    contentPwa!.style.display = 'none';
+  });
+
+  btnPwa?.addEventListener('click', () => {
+    btnPwa.style.background = 'white';
+    btnPwa.style.color = '#2f5d9f';
+    btnPwa.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+    btnApk!.style.background = 'transparent';
+    btnApk!.style.color = '#64748b';
+    btnApk!.style.boxShadow = 'none';
+    contentApk!.style.display = 'none';
+    contentPwa!.style.display = 'block';
+  });
+
+  closeBtn?.addEventListener('click', () => {
     document.body.removeChild(div);
   });
 };
@@ -18241,6 +18287,10 @@ const schoolMigrations = `
                   teacherAssignments={teacherAssignments}
                   setSelectedStudentQR={setSelectedStudentQR}
                   staffAttendance={staffAttendance}
+                  setStaffAttendance={setStaffAttendance}
+                  staff={staff}
+                  hostelAttendance={hostelAttendance}
+                  setHostelAttendance={setHostelAttendance}
                   schoolProfile={schoolProfile}
                 />
               </motion.div>

@@ -67,6 +67,8 @@ export interface Attendance {
   time: string;
   markedBy: string;
   period?: 'Morning' | 'Last Period';
+  ipAddress?: string;
+  location?: string;
 }
 
 export interface TimeTableEntry {
@@ -417,4 +419,8 @@ export interface Student {
     name: string;
     file: string;
   }[];
+  roomNumber?: string;
+  isHostel?: boolean;
+  hostelName?: string;
+  bedNumber?: string;
 }
