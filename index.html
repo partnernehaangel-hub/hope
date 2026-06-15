@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#4f46e5" />
+    <title>Subrai Mission Convent School</title>
+    <style>
+      #root:empty {
+        background: #4f46e5;
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #root:empty::after {
+        content: "Subrai Mission Convent School";
+        font-size: 1.25rem;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        text-transform: uppercase;
+      }
+      .loader {
+        width: 48px;
+        height: 48px;
+        border: 5px solid #FFF;
+        border-bottom-color: transparent;
+        border-radius: 50%;
+        display: inline-block;
+        box-sizing: border-box;
+        animation: rotation 1s linear infinite;
+        margin-bottom: 20px;
+      }
+      @keyframes rotation {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"><span class="loader"></span></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
