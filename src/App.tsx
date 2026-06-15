@@ -119,7 +119,7 @@ import { SqlEditor } from './components/SqlEditor';
 
 // --- Types ---
 
-type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor';
+type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor' | 'attendance-public';
 
 // --- Utilities ---
 
@@ -136,6 +136,278 @@ const extractIdFromQR = (text: string, paramName: string = 'id') => {
     }
   }
   return text;
+};
+
+const safeStr = (val: any): string => {
+  if (val === undefined || val === null) return '';
+  if (typeof val === 'object') {
+    try {
+      return JSON.stringify(val);
+    } catch {
+      return '';
+    }
+  }
+  return String(val);
+};
+
+const parseBulkStudents = (input: string, mode: 'auto' | 'excel' | 'double' | 'json', currentSession: string): any[] => {
+  if (!input || !input.trim()) return [];
+
+  const trimmed = input.trim();
+
+  // Mode Auto or JSON: detect if it's JSON
+  if (mode === 'json' || (mode === 'auto' && (trimmed.startsWith('[') || trimmed.startsWith('{')))) {
+    try {
+      const data = JSON.parse(trimmed);
+      const arr = Array.isArray(data) ? data : [data];
+      return arr.map(s => ({
+        name: safeStr(s.Name || s.name || s.first_name || ''),
+        surname: safeStr(s.Surname || s.surname || ''),
+        studentType: safeStr(s["student type"] || s.studentType || s.student_type || 'OLD'),
+        class: safeStr(s["Class / Section"] || s.class || s.class_name || ''),
+        section: safeStr(s["SECTION"] || s.section || s.section_name || ''),
+        rollNumber: safeStr(s["ROLL NO"] || s.rollNumber || s.roll_number || ''),
+        dob: safeStr(s["D.O.B"] || s.dob || s.date_of_birth || ''),
+        fatherName: safeStr(s["Father Name"] || s.fatherName || s.father_name || ''),
+        motherName: safeStr(s["Mother Name"] || s.motherName || s.mother_name || ''),
+        fatherMobile: safeStr(s["FATHERS PHONE No."] || s.fatherMobile || s.father_mobile || ''),
+        bloodGroup: safeStr(s["Blood Group"] || s.bloodGroup || s.blood_group || ''),
+        address: safeStr(s["Address"] || s.address || s.residential_address || ''),
+      }));
+    } catch (e) {
+      if (mode === 'json') return []; // If JSON mode explicitly selected but failed, return empty
+    }
+  }
+
+  // Non-JSON plain text processing
+  const rawLines = input.split('\n').map(l => l.trim()).filter(Boolean);
+  if (rawLines.length === 0) return [];
+
+  // Mode Auto: decide if it matches Double-row line counts or patterns.
+  let isDoubleRow = mode === 'double';
+  if (mode === 'auto') {
+    // Check if odd and even lines show alternate properties.
+    let hasDateAlternative = false;
+    let hasBloodGroupAlternative = false;
+    for (let j = 0; j < Math.min(6, rawLines.length); j++) {
+      const hasDate = /\d{1,2}[/-]\d{1,2}[/-]\d{4}/.test(rawLines[j]) || /\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(rawLines[j]);
+      const hasBlood = /\b(A|B|AB|O)[+-]\b/i.test(rawLines[j]);
+      const hasMobile = /\b\d{10}\b/.test(rawLines[j]);
+
+      if (j % 2 === 0 && hasDate) {
+        hasDateAlternative = true;
+      }
+      if (j % 2 === 1 && (hasBlood || hasMobile)) {
+        hasBloodGroupAlternative = true;
+      }
+    }
+    if (hasDateAlternative || hasBloodGroupAlternative) {
+      isDoubleRow = true;
+    }
+  }
+
+  const parseTableLine = (line: string): string[] => {
+    if (line.includes('\t')) {
+      return line.split('\t').map(s => s.trim()).filter(Boolean);
+    }
+    // Splitting by 2 or more consecutive spaces
+    const parts = line.split(/\s{2,}/).map(s => s.trim()).filter(Boolean);
+    if (parts.length > 1) {
+      return parts;
+    }
+    if (line.includes(',')) {
+      return line.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    // Final fallback
+    return line.split(/\s+/).map(s => s.trim()).filter(s => s.length > 0);
+  };
+
+  const cleanClassSection = (classSecStr: string) => {
+    if (!classSecStr) return { class: '', section: 'A' };
+    const secRegex = /\(([A-Z])\)/i;
+    const match = classSecStr.match(secRegex);
+    if (match) {
+      const cls = classSecStr.replace(secRegex, '').trim();
+      return { class: cls, section: match[1].toUpperCase() };
+    }
+    const words = classSecStr.split(/\s+/);
+    if (words.length > 1) {
+      const last = words[words.length - 1];
+      if (last.length === 1 && /^[A-Z]$/i.test(last)) {
+        return { class: words.slice(0, words.length - 1).join(' '), section: last.toUpperCase() };
+      }
+    }
+    const matchNoSpace = classSecStr.match(/([a-zA-Z0-9]+)\s*\(([A-Z])\)/i);
+    if (matchNoSpace) {
+      return { class: matchNoSpace[1].trim(), section: matchNoSpace[2].toUpperCase() };
+    }
+    return { class: classSecStr, section: 'A' };
+  };
+
+  const reformatDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const match = dateStr.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (match) {
+      const day = match[1].padStart(2, '0');
+      const month = match[2].padStart(2, '0');
+      const year = match[3];
+      return `${year}-${month}-${day}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
+    return dateStr;
+  };
+
+  const result: any[] = [];
+
+  if (isDoubleRow) {
+    for (let i = 0; i < rawLines.length; i += 2) {
+      const line1 = rawLines[i];
+      const line2 = rawLines[i + 1] || '';
+
+      if (!line1) continue;
+
+      const p1 = parseTableLine(line1);
+      const p2 = parseTableLine(line2);
+
+      const name = p1[0] || '';
+      
+      let classVal = '';
+      let sectionVal = 'A';
+      if (p1[1]) {
+        const { class: c, section: s } = cleanClassSection(p1[1]);
+        classVal = c;
+        sectionVal = s;
+      }
+
+      const rollNumber = p1[2] || '';
+      const dobRaw = p1[3] || '';
+      const dob = reformatDate(dobRaw);
+      const fatherName = p1[4] || '';
+
+      const motherName = p2[0] || '';
+      
+      let fatherMobile = '';
+      let bloodGroup = '';
+      let addressParts: string[] = [];
+
+      for (let k = 1; k < p2.length; k++) {
+        const token = p2[k];
+        if (/^\d{10}$/.test(token) || /^\d{8,12}$/.test(token)) {
+          fatherMobile = token;
+        } else if (/^(A|B|AB|O)[+-]$/i.test(token)) {
+          bloodGroup = token.toUpperCase();
+        } else if (token) {
+          addressParts.push(token);
+        }
+      }
+
+      const address = addressParts.join(', ') || p2[2] || '';
+
+      result.push({
+        name,
+        surname: '',
+        studentType: 'OLD',
+        class: classVal,
+        section: sectionVal,
+        rollNumber,
+        dob,
+        fatherName,
+        motherName,
+        fatherMobile,
+        bloodGroup,
+        address
+      });
+    }
+  } else {
+    for (const line of rawLines) {
+      const parts = parseTableLine(line);
+      if (parts.length < 2) continue;
+
+      let name = '';
+      let classVal = '';
+      let sectionVal = 'A';
+      let rollNumber = '';
+      let dob = '';
+      let fatherName = '';
+      let motherName = '';
+      let fatherMobile = '';
+      let bloodGroup = '';
+      let address = '';
+      let studentType = 'OLD';
+
+      if (parts.length >= 7) {
+        let offset = 0;
+        if (parts[0] === 'OLD' || parts[0] === 'NEW' || parts[0] === 'Old' || parts[0] === 'New') {
+          studentType = parts[0].toUpperCase();
+          offset = 1;
+        }
+
+        name = parts[offset] || '';
+        
+        const classToken = parts[offset + 1] || '';
+        const { class: c, section: s } = cleanClassSection(classToken);
+        classVal = c;
+        sectionVal = s;
+
+        let nextIdx = offset + 2;
+        if (parts[nextIdx] && parts[nextIdx].length === 1 && /^[A-Z]$/i.test(parts[nextIdx])) {
+          sectionVal = parts[nextIdx].toUpperCase();
+          nextIdx++;
+        }
+
+        if (parts[nextIdx] && /^\d+$/.test(parts[nextIdx])) {
+          rollNumber = parts[nextIdx];
+          nextIdx++;
+        }
+
+        if (parts[nextIdx] && (/\d{1,2}[/-]\d{1,2}[/-]\d{4}/.test(parts[nextIdx]) || /\d{4}-\d{2}-\d{2}/.test(parts[nextIdx]))) {
+          dob = reformatDate(parts[nextIdx]);
+          nextIdx++;
+        }
+
+        fatherName = parts[nextIdx] || '';
+        motherName = parts[nextIdx + 1] || '';
+        
+        if (parts[nextIdx + 2] && /^\d+$/.test(parts[nextIdx + 2])) {
+          fatherMobile = parts[nextIdx + 2];
+        }
+
+        if (parts[nextIdx + 3] && /^(A|B|AB|O)[+-]$/i.test(parts[nextIdx + 3])) {
+          bloodGroup = parts[nextIdx + 3].toUpperCase();
+        }
+
+        address = parts.slice(nextIdx + 4).join(', ') || '';
+      } else {
+        name = parts[0] || '';
+        const { class: c, section: s } = cleanClassSection(parts[1] || 'Nursery');
+        classVal = c;
+        sectionVal = s;
+        rollNumber = parts[2] || '';
+        dob = parts[3] ? reformatDate(parts[3]) : '';
+        fatherName = parts[4] || '';
+        fatherMobile = parts[5] || '';
+      }
+
+      result.push({
+        name,
+        surname: '',
+        studentType,
+        class: classVal || 'Nursery',
+        section: sectionVal || 'A',
+        rollNumber: rollNumber || '',
+        dob: dob || '',
+        fatherName: fatherName || '',
+        motherName: motherName || '',
+        fatherMobile: fatherMobile || '',
+        bloodGroup: bloodGroup || '',
+        address: address || ''
+      });
+    }
+  }
+
+  return result;
 };
 
 interface User {
@@ -5297,6 +5569,185 @@ const FeeManagement = ({
     search: ''
   });
 
+  const [admissionFees, setAdmissionFees] = useState({
+    new_school: 4000,
+    new_hostel: 3000,
+    old_school: 3500,
+    old_hostel: 2500
+  });
+
+  const [monthlyFees, setMonthlyFees] = useState({
+    nursery_kg1_school: 600,
+    kg2_school: 650,
+    class1_7_school: 750,
+    all_hostel: 1000
+  });
+
+  const [isApplyingFees, setIsApplyingFees] = useState(false);
+
+  useEffect(() => {
+    if (feeMaster && feeMaster.length > 0) {
+      const newS = feeMaster.find((f: any) => f.feeType === 'Admission Fee' && f.studentType === 'New')?.amount;
+      const oldS = feeMaster.find((f: any) => f.feeType === 'Admission Fee' && f.studentType === 'Old')?.amount;
+      const newH = feeMaster.find((f: any) => f.feeType === 'Hostel Admission Fee' && f.studentType === 'New')?.amount;
+      const oldH = feeMaster.find((f: any) => f.feeType === 'Hostel Admission Fee' && f.studentType === 'Old')?.amount;
+      
+      const tuitionN = feeMaster.find((f: any) => f.feeType === 'Tuition Fee' && (f.class === 'LKG' || f.class === 'UKG' || f.class === 'Nursery' || f.class === 'Nursery TO KG1'))?.amount;
+      const tuitionK = feeMaster.find((f: any) => f.feeType === 'Tuition Fee' && (f.class === 'KG-2' || f.class === 'KG2'))?.amount;
+      const tuitionC = feeMaster.find((f: any) => f.feeType === 'Tuition Fee' && f.class === 'Class 1')?.amount;
+      const hostelM = feeMaster.find((f: any) => f.feeType === 'Hostel Fee')?.amount;
+
+      setAdmissionFees(p => ({
+        new_school: newS !== undefined ? newS : p.new_school,
+        old_school: oldS !== undefined ? oldS : p.old_school,
+        new_hostel: newH !== undefined ? newH : p.new_hostel,
+        old_hostel: oldH !== undefined ? oldH : p.old_hostel,
+      }));
+
+      setMonthlyFees(p => ({
+        nursery_kg1_school: tuitionN !== undefined ? tuitionN : p.nursery_kg1_school,
+        kg2_school: tuitionK !== undefined ? tuitionK : p.kg2_school,
+        class1_7_school: tuitionC !== undefined ? tuitionC : p.class1_7_school,
+        all_hostel: hostelM !== undefined ? hostelM : p.all_hostel,
+      }));
+    }
+  }, [feeMaster]);
+
+  const handleApplyFeeStructure = async () => {
+    if (!supabase) {
+      alert('Database connection not available');
+      return;
+    }
+    
+    setIsApplyingFees(true);
+    try {
+      const currentSession = schoolProfile.currentSession || '2024-25';
+      const classesList = masterData.classes || ['LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+      
+      const standardTypes = ['Admission Fee', 'Hostel Admission Fee', 'Tuition Fee', 'Hostel Fee'];
+      
+      const { error: deleteError } = await supabase
+        .from('fee_master')
+        .delete()
+        .in('fee_type', standardTypes)
+        .eq('academic_session', currentSession);
+        
+      if (deleteError) throw deleteError;
+      
+      const newEntries: any[] = [];
+      
+      classesList.forEach((cls: string) => {
+        const lowerCls = cls.toLowerCase();
+        
+        newEntries.push({
+          class_name: cls,
+          fee_type: 'Admission Fee',
+          amount: Number(admissionFees.new_school),
+          frequency: 'Yearly',
+          student_type: 'New',
+          academic_session: currentSession
+        });
+        
+        newEntries.push({
+          class_name: cls,
+          fee_type: 'Admission Fee',
+          amount: Number(admissionFees.old_school),
+          frequency: 'Yearly',
+          student_type: 'Old',
+          academic_session: currentSession
+        });
+        
+        newEntries.push({
+          class_name: cls,
+          fee_type: 'Hostel Admission Fee',
+          amount: Number(admissionFees.new_hostel),
+          frequency: 'Yearly',
+          student_type: 'New',
+          academic_session: currentSession
+        });
+        
+        newEntries.push({
+          class_name: cls,
+          fee_type: 'Hostel Admission Fee',
+          amount: Number(admissionFees.old_hostel),
+          frequency: 'Yearly',
+          student_type: 'Old',
+          academic_session: currentSession
+        });
+        
+        let tuitionVal = 0;
+        if (lowerCls.includes('nursery') || lowerCls.includes('lkg') || lowerCls.includes('ukg') || lowerCls.includes('kg-1') || lowerCls.includes('kg1')) {
+          tuitionVal = Number(monthlyFees.nursery_kg1_school);
+        } else if (lowerCls.includes('kg-2') || lowerCls.includes('kg2')) {
+          tuitionVal = Number(monthlyFees.kg2_school);
+        } else if (
+          lowerCls.includes('class 1') || 
+          lowerCls.includes('class 2') || 
+          lowerCls.includes('class 3') || 
+          lowerCls.includes('class 4') || 
+          lowerCls.includes('class 5') || 
+          lowerCls.includes('class 6') || 
+          lowerCls.includes('class 7')
+        ) {
+          tuitionVal = Number(monthlyFees.class1_7_school);
+        }
+        
+        if (tuitionVal > 0) {
+          newEntries.push({
+            class_name: cls,
+            fee_type: 'Tuition Fee',
+            amount: tuitionVal,
+            frequency: 'Monthly',
+            student_type: 'Both',
+            academic_session: currentSession
+          });
+        }
+        
+        newEntries.push({
+          class_name: cls,
+          fee_type: 'Hostel Fee',
+          amount: Number(monthlyFees.all_hostel),
+          frequency: 'Monthly',
+          student_type: 'Both',
+          academic_session: currentSession
+        });
+      });
+      
+      if (newEntries.length > 0) {
+        const { data: inserted, error: insertError } = await supabase
+          .from('fee_master')
+          .insert(newEntries)
+          .select();
+          
+        if (insertError) throw insertError;
+        
+        if (inserted) {
+          const formatted = inserted.map((fm: any) => ({
+            id: fm.id,
+            class: fm.class_name,
+            feeType: fm.fee_type,
+            amount: fm.amount,
+            frequency: fm.frequency,
+            studentType: fm.student_type,
+            session: fm.academic_session
+          }));
+          
+          setFeeMaster((prev: any[]) => {
+            const preservedOtherTypes = prev.filter(f => !standardTypes.includes(f.feeType) || (f.session && f.session !== currentSession));
+            return [...preservedOtherTypes, ...formatted];
+          });
+          
+          alert('Customized Fee Schedule applied and synced successfully!');
+        }
+      }
+    } catch (err: any) {
+      console.error('Error in handleApplyFeeStructure:', err);
+      alert('Failed to update fee structures: ' + err.message);
+    } finally {
+      setIsApplyingFees(false);
+    }
+  };
+
   const [contraForm, setContraForm] = useState({
     type: 'Bank to Cash' as 'Bank to Cash' | 'Cash to Bank' | 'Bank Adjustment' | 'Cash Adjustment',
     amount: 0,
@@ -5489,6 +5940,28 @@ const FeeManagement = ({
     return breakdown;
   };
 
+  const getPrecedingUnpaidMonth = (student: any, month: string) => {
+    if (!student) return null;
+    const academicMonths = [
+      'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'
+    ];
+    const targetIdx = academicMonths.indexOf(month);
+    if (targetIdx <= 0) return null;
+
+    for (let i = 0; i < targetIdx; i++) {
+      const prevMonth = academicMonths[i];
+      const duesBreakdown = getMonthlyDuesBreakdown(student, prevMonth);
+      const totalDueForMonth = Object.values(duesBreakdown).reduce((sum: number, val: any) => sum + val, 0);
+      if (totalDueForMonth > 0) {
+        return {
+          month: prevMonth,
+          dueAmount: totalDueForMonth
+        };
+      }
+    }
+    return null;
+  };
+
   const handlePrintAllReports = () => {
     window.print();
   };
@@ -5500,6 +5973,12 @@ const FeeManagement = ({
     }
 
     if (!supabase) return;
+
+    const unpaidPrevMonth = getPrecedingUnpaidMonth(selectedStudent, selectedMonth);
+    if (unpaidPrevMonth) {
+      alert(`Cannot collect fee for ${selectedMonth} yet. Please clear the pending fee of ₹${unpaidPrevMonth.dueAmount} for ${unpaidPrevMonth.month} first.`);
+      return;
+    }
 
     const academicYearStartMonth = 'April';
     const quarterlyMonths = ['April', 'July', 'October', 'January'];
@@ -5873,8 +6352,19 @@ const FeeManagement = ({
                   >
                     {months.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
+                  {selectedStudent && getPrecedingUnpaidMonth(selectedStudent, selectedMonth) && (
+                    <div className="mt-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-start gap-2 animate-fade-in">
+                      <AlertCircle className="shrink-0 mt-0.5 text-rose-500" size={16} />
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wider">Fees Payment Blocked</p>
+                        <p className="text-[10px] font-semibold mt-0.5 leading-relaxed">
+                          Unpaid fees of <strong>₹{getPrecedingUnpaidMonth(selectedStudent, selectedMonth)?.dueAmount}</strong> found for <strong>{getPrecedingUnpaidMonth(selectedStudent, selectedMonth)?.month}</strong>. You must clear previous months' fees before paying for {selectedMonth}.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {selectedStudent && (
-                    <div className="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <div className="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-100 font-bold">
                       <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-2">Remaining Monthly Dues for {selectedMonth}</p>
                       <div className="space-y-1">
                         {Object.entries(getMonthlyDuesBreakdown(selectedStudent, selectedMonth)).map(([type, amount]) => (
@@ -5989,13 +6479,19 @@ const FeeManagement = ({
             </div>
           )}
         </div>
-                <button 
-                  onClick={handleCollectFee}
-                  className="btn-primary px-8 py-3 flex items-center gap-2"
-                >
-                  <Coins size={20} />
-                  Collect & Print
-                </button>
+                {(() => {
+                  const unpaidPrev = getPrecedingUnpaidMonth(selectedStudent, selectedMonth);
+                  return (
+                    <button 
+                      onClick={handleCollectFee}
+                      disabled={!!unpaidPrev}
+                      className={`btn-primary px-8 py-3 flex items-center gap-2 ${unpaidPrev ? 'opacity-50 cursor-not-allowed bg-slate-400 hover:bg-slate-400 border-none shadow-none' : ''}`}
+                    >
+                      <Coins size={20} />
+                      Collect & Print
+                    </button>
+                  );
+                })()}
               </div>
             </Card>
           </div>
@@ -6059,6 +6555,180 @@ const FeeManagement = ({
 
       {activeTab === 'master' && (
         <div className="space-y-6">
+          <Card className="border-2 border-slate-700 overflow-hidden shadow-lg bg-white">
+            <div className="bg-slate-800 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-bold tracking-tight uppercase flex items-center gap-2">
+                  <ClipboardList className="text-sky-400" size={24} />
+                  Official Fee Structure Setup
+                </h3>
+                <p className="text-slate-300 text-xs mt-1 font-semibold uppercase tracking-wider">
+                  Same-to-same spreadsheet rules for the active academic session ({schoolProfile?.currentSession || '2024-25'})
+                </p>
+              </div>
+              {!isAccountant && (
+                <button
+                  onClick={handleApplyFeeStructure}
+                  disabled={isApplyingFees}
+                  className="px-6 py-3 font-extrabold text-xs uppercase tracking-widest bg-sky-500 hover:bg-sky-400 text-slate-900 rounded-xl shadow-lg shadow-sky-500/20 active:translate-y-0.5 transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isApplyingFees ? (
+                    <>
+                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-slate-900 border-t-transparent" />
+                      Syncing Fees...
+                    </>
+                  ) : (
+                    <>
+                      Apply &amp; Sync Fees
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            <div className="p-6 bg-slate-50/50">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                {/* ADMISSION FEES */}
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Schedule A: One-Time Admission Dues</p>
+                  <div className="border-2 border-slate-800 bg-white rounded-2xl overflow-hidden shadow-sm">
+                    <div className="border-b-2 border-slate-800 bg-slate-800 text-center py-3 font-black text-sm text-white uppercase tracking-wider">
+                      ADMISSION FEES
+                    </div>
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b-2 border-slate-800 bg-slate-50">
+                          <th className="border-r-2 border-slate-800 p-2 text-center text-[10px] font-black text-slate-600 uppercase tracking-wider w-1/3">STUDENT TYPE</th>
+                          <th className="border-r-2 border-slate-800 p-2 text-center text-[10px] font-black text-slate-600 uppercase tracking-wider w-1/3">SCHOOL</th>
+                          <th className="p-2 text-center text-[10px] font-black text-slate-600 uppercase tracking-wider w-1/3">HOSTEL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b-2 border-slate-800">
+                          <td className="border-r-2 border-slate-800 p-3 text-center font-black bg-slate-100/50 text-slate-700 text-xs">NEW</td>
+                          <td className="border-r-2 border-slate-800 p-2">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={admissionFees.new_school} 
+                              onChange={(e) => setAdmissionFees({...admissionFees, new_school: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={admissionFees.new_hostel} 
+                              onChange={(e) => setAdmissionFees({...admissionFees, new_hostel: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="border-r-2 border-slate-800 p-3 text-center font-black bg-slate-100/50 text-slate-700 text-xs">OLD</td>
+                          <td className="border-r-2 border-slate-800 p-2">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={admissionFees.old_school} 
+                              onChange={(e) => setAdmissionFees({...admissionFees, old_school: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                          <td className="p-2">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={admissionFees.old_hostel} 
+                              onChange={(e) => setAdmissionFees({...admissionFees, old_hostel: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* MONTHLY FEE FOR ALL */}
+                <div className="space-y-2">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Schedule B: Recurrent Monthly Dues</p>
+                  <div className="border-2 border-slate-800 bg-white rounded-2xl overflow-hidden shadow-sm">
+                    <div className="border-b-2 border-slate-800 bg-slate-800 text-center py-3 font-black text-sm text-white uppercase tracking-wider">
+                      MONTHLY FEE FOR ALL
+                    </div>
+                    <table className="w-full border-collapse">
+                      <tbody>
+                        <tr className="border-b-2 border-slate-800">
+                          <td className="border-r-2 border-slate-800 p-3 bg-slate-50 text-slate-800 font-extrabold text-xs w-4/12 text-center">Nursery TO KG1</td>
+                          <td className="border-r-2 border-slate-800 p-2 w-4/12">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={monthlyFees.nursery_kg1_school} 
+                              onChange={(e) => setMonthlyFees({...monthlyFees, nursery_kg1_school: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                          <td rowSpan={3} className="p-3 text-center w-4/12 font-black text-[11px] text-slate-500 bg-slate-50/50 align-middle">
+                            <div className="font-extrabold uppercase text-amber-700 bg-amber-50 border border-amber-200 p-4 rounded-xl shadow-xs transform -rotate-2">
+                              SCHOOL FEE
+                            </div>
+                          </td>
+                        </tr>
+
+                        <tr className="border-b-2 border-slate-800">
+                          <td className="border-r-2 border-slate-800 p-3 bg-slate-50 text-slate-800 font-extrabold text-xs text-center">KG-2</td>
+                          <td className="border-r-2 border-slate-800 p-2">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={monthlyFees.kg2_school} 
+                              onChange={(e) => setMonthlyFees({...monthlyFees, kg2_school: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                        </tr>
+
+                        <tr className="border-b-2 border-slate-800">
+                          <td className="border-r-2 border-slate-800 p-3 bg-slate-50 text-slate-800 font-extrabold text-xs text-center">CLASS 1 TO 7</td>
+                          <td className="border-r-2 border-slate-800 p-2">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={monthlyFees.class1_7_school} 
+                              onChange={(e) => setMonthlyFees({...monthlyFees, class1_7_school: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                        </tr>
+
+                        <tr className="bg-slate-50/35">
+                          <td className="border-r-2 border-slate-800 p-3 bg-slate-100 text-slate-800 font-extrabold text-xs text-center">ALL CLASS</td>
+                          <td className="border-r-2 border-slate-800 p-2">
+                            <input 
+                              type="number" 
+                              disabled={isAccountant}
+                              value={monthlyFees.all_hostel} 
+                              onChange={(e) => setMonthlyFees({...monthlyFees, all_hostel: parseFloat(e.target.value) || 0})}
+                              className="w-full text-center py-1 bg-slate-50 border border-slate-200 focus:border-slate-800 focus:ring-0 rounded font-mono text-base font-bold text-slate-900 disabled:opacity-75"
+                            />
+                          </td>
+                          <td className="p-3 text-center font-black text-[11px] text-slate-500 bg-slate-50/50 align-middle">
+                            <div className="font-extrabold uppercase text-sky-700 bg-sky-50 border border-sky-200 p-2 rounded-xl shadow-xs">
+                              HOSTEL FEE
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+
           {!isAccountant && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-1">
@@ -15031,7 +15701,6 @@ const schoolMigrations = `
 
   const [view, setView] = useState<View>('login');
   const [showBulkStudentModal, setShowBulkStudentModal] = useState(false);
-  const [bulkStudentInput, setBulkStudentInput] = useState('');
   const [isViewOnly, setIsViewOnly] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
@@ -15040,12 +15709,17 @@ const schoolMigrations = `
     const restrictedViews = ['id-cards', 'hostel', 'reports', 'settings', 'register-student', 'admin-360', 'front-office', 'fee-management', 'human-resource', 'staff-attendance', 'communicate', 'user-logs', 'super-admin-panel'];
     const isStudentOrParent = currentUser?.role === 'student' || currentUser?.role === 'parent';
     const isAccountant = currentUser?.role === 'accountant';
+    const isNotAdmin = currentUser?.role !== 'admin' && currentUser?.role !== 'super-admin';
     
     if (isStudentOrParent && restrictedViews.includes(view)) {
       setView('dashboard');
     }
 
-    if (isAccountant && !['dashboard', 'fee-management', 'reports', 'student-list', 'academics', 'calendar', 'examination', 'attendance'].includes(view)) {
+    if (isNotAdmin && (view === 'attendance' || view === 'staff-attendance')) {
+      setView('dashboard');
+    }
+
+    if (isAccountant && !['dashboard', 'fee-management', 'reports', 'student-list', 'academics', 'calendar', 'examination'].includes(view)) {
       // Allow Accountant but keep them away from sensitive admin only panels like Human Resource, Settings, etc.
       // The requirement says "Give Permission only to collect fees, check student Ledger, see fee master..., see reports, see bank and cash Ledger..."
       // So they need dashboard, fee-management (for fees/ledger/master), reports.
@@ -15176,6 +15850,25 @@ const schoolMigrations = `
       { id: '4', name: 'Library', url: 'https://picsum.photos/seed/library/640/480' }
     ]
   });
+
+  const [bulkStudentInput, setBulkStudentInput] = useState('');
+  const [bulkImportMode, setBulkImportMode] = useState<'auto' | 'excel' | 'double' | 'json'>('auto');
+  const parsedStudentsPreview = useCallback(() => {
+    return parseBulkStudents(bulkStudentInput, bulkImportMode, schoolProfile?.currentSession || '2025-26');
+  }, [bulkStudentInput, bulkImportMode, schoolProfile]);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (text) {
+        setBulkStudentInput(String(text));
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const [formData, setFormData] = useState<any>({});
   const [selectedPersonForID, setSelectedPersonForID] = useState<any>(null);
@@ -16752,11 +17445,20 @@ const schoolMigrations = `
                   </button>
                 </div>
 
-                <div className="flex flex-wrap justify-center gap-2 opacity-60">
+                <div className="flex flex-wrap justify-center gap-2 items-center opacity-90">
                   <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Student</span>
                   <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Parent</span>
                   <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Staff</span>
                   <span className="text-[9px] font-black text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-lg uppercase tracking-widest">Teacher</span>
+                  <span className="text-slate-300">|</span>
+                  <button 
+                    type="button"
+                    onClick={() => setView('attendance-public')}
+                    className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg uppercase tracking-widest flex items-center gap-1 cursor-pointer active:scale-95 shadow-xs"
+                  >
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                    Attendance Panel
+                  </button>
                 </div>
               </div>
 
@@ -16766,6 +17468,58 @@ const schoolMigrations = `
             </div>
           </div>
         </motion.div>
+      </div>
+    );
+  }
+
+  if (view === 'attendance-public') {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col justify-between p-4 md:p-8 font-display">
+        {/* Header Block with Back Button */}
+        <div className="max-w-7xl mx-auto w-full bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setView('login')}
+              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all active:scale-95 px-4 py-2 rounded-xl font-bold text-xs uppercase"
+            >
+              ← Back to Login
+            </button>
+            <div>
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Kiosk Mode</h2>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{schoolProfile?.name || 'Digital Access'}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl">
+            <span className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></span>
+            <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Public Attendance Panel</span>
+          </div>
+        </div>
+
+        {/* Attendance Component Container */}
+        <div className="max-w-7xl mx-auto w-full flex-1">
+          <Attendance 
+            students={students} 
+            attendance={attendance} 
+            setAttendance={setAttendance} 
+            masterData={masterData} 
+            currentUser={{ name: 'Public Kiosk', role: 'staff' }} // Safe dummy user for public kiosk
+            supabase={supabase}
+            teacherAssignments={teacherAssignments}
+            setSelectedStudentQR={setSelectedStudentQR}
+            staffAttendance={staffAttendance}
+            setStaffAttendance={setStaffAttendance}
+            staff={staff}
+            hostelAttendance={hostelAttendance}
+            setHostelAttendance={setHostelAttendance}
+            schoolProfile={schoolProfile}
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="text-center py-6 text-xs text-slate-400 font-bold uppercase tracking-widest mt-6 pb-2">
+          a Product of <span className="text-primary font-black">digital access</span> powered by <span className="text-primary font-black">JOSHODA</span>
+        </div>
       </div>
     );
   }
@@ -16916,7 +17670,7 @@ const schoolMigrations = `
                   )}
                 </>
               )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff' || currentUser?.role === 'warden' || currentUser?.role === 'accountant') && (
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
                 <SidebarItem 
                   icon={QrCode} 
                   label={isSidebarOpen ? "Staff Attendance" : ""} 
@@ -16955,13 +17709,6 @@ const schoolMigrations = `
                 isSidebarOpen={isSidebarOpen}
               />
               <SidebarItem 
-                icon={UserCheck} 
-                label={isSidebarOpen ? "Attendance" : ""} 
-                active={view === 'attendance'} 
-                onClick={() => setView('attendance')} 
-                isSidebarOpen={isSidebarOpen}
-              />
-              <SidebarItem 
                 icon={ClipboardList} 
                 label={isSidebarOpen ? "Examination" : ""} 
                 active={view === 'examination'} 
@@ -16988,7 +17735,7 @@ const schoolMigrations = `
               isSidebarOpen={isSidebarOpen}
             />
           )}
-          {currentUser?.role !== 'teacher' && currentUser?.role !== 'student' && currentUser?.role !== 'parent' && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
             <SidebarItem 
               icon={UserCheck} 
               label={isSidebarOpen ? "Attendance" : ""} 
@@ -19261,13 +20008,15 @@ const schoolMigrations = `
           <BookOpen size={20} />
           <span className="text-[10px] font-bold uppercase">Study</span>
         </button>
-        <button 
-          onClick={() => setView('attendance')}
-          className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${view === 'attendance' ? 'text-primary' : 'text-slate-400'}`}
-        >
-          <UserCheck size={20} />
-          <span className="text-[10px] font-bold uppercase">Attend</span>
-        </button>
+        {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+          <button 
+            onClick={() => setView('attendance')}
+            className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${view === 'attendance' ? 'text-primary' : 'text-slate-400'}`}
+          >
+            <UserCheck size={20} />
+            <span className="text-[10px] font-bold uppercase">Attend</span>
+          </button>
+        )}
         <button 
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
           className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${isSidebarOpen ? 'text-primary' : 'text-slate-400'}`}
@@ -19351,83 +20100,318 @@ const schoolMigrations = `
       {/* Student QR Code Modal */}
       <AnimatePresence>
         {showBulkStudentModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-[32px] p-8 shadow-2xl relative z-10 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowBulkStudentModal(false);
+                setBulkStudentInput('');
+              }}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[32px] p-6 md:p-8 shadow-2xl relative z-10 w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] my-8"
+            >
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full -mr-16 -mt-16"></div>
-            <div className="flex justify-between items-center mb-6 shrink-0">
+            
+            {/* Modal Header */}
+            <div className="flex justify-between items-center mb-6 shrink-0 relative">
               <div>
-                <h3 className="text-2xl font-black text-text-heading">Bulk Student Import</h3>
-                <p className="text-sm text-text-sub font-medium">Add multiple students using JSON format.</p>
+                <h3 className="text-2xl font-black text-text-heading flex items-center gap-2">
+                  <Upload size={24} className="text-primary" />
+                  Smart Bulk Student Import
+                </h3>
+                <p className="text-xs text-text-sub font-bold uppercase tracking-widest mt-1">Copy-paste from Excel/Word or Upload lists securely</p>
               </div>
-              <button onClick={() => setShowBulkStudentModal(false)} className="p-2 hover:bg-slate-100 rounded-full">
+              <button 
+                onClick={() => {
+                  setShowBulkStudentModal(false);
+                  setBulkStudentInput('');
+                }} 
+                className="p-2 hover:bg-slate-100 rounded-full transition-colors active:scale-95"
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
+            {/* Dynamic Content Columns */}
+            <div className="flex-1 space-y-5 overflow-y-auto custom-scrollbar pr-2 min-h-0">
+              
+              {/* Row 1: Source Settings & File Upload */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="md:col-span-8 flex flex-col gap-2">
+                  <label className="text-[10px] font-black text-text-heading uppercase tracking-wider block">
+                    1. Choose Input Parsing Mode
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { key: 'auto', label: '🤖 Auto-Detect' },
+                      { key: 'double', label: '📋 Double-Line/Student' },
+                      { key: 'excel', label: '📊 Excel / CSV Line' },
+                      { key: 'json', label: '⚙️ JSON Format' },
+                    ].map((m) => (
+                      <button
+                        key={m.key}
+                        onClick={() => setBulkImportMode(m.key as any)}
+                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all uppercase tracking-normal border flex items-center justify-center text-center ${
+                          bulkImportMode === m.key
+                            ? 'bg-primary text-white border-primary shadow-sm'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="md:col-span-4 flex flex-col gap-2 justify-end">
+                  <label className="text-[10px] font-black text-text-heading uppercase tracking-wider block">
+                    Or Upload File (.txt, .csv, .tsv)
+                  </label>
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full bg-white border-2 border-dashed border-slate-300 hover:border-primary text-text-heading hover:text-primary py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95"
+                  >
+                    <Upload size={14} />
+                    Choose File & Parse
+                  </button>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleBulkFileChange} 
+                    className="hidden" 
+                    accept=".txt,.csv,.tsv,.json" 
+                  />
+                </div>
+              </div>
+
+              {/* Mode Description Text */}
+              <div className="text-[10px] font-bold text-slate-500 bg-blue-50/50 border border-blue-100 rounded-xl px-4 py-2.5 flex items-start gap-2">
+                <span className="text-blue-600 font-extrabold uppercase shrink-0 mt-0.5">[Tip]</span>
+                <span className="leading-relaxed">
+                  {bulkImportMode === 'auto' && 'Intelligent mode will automatically check line counts, separators, dates, and patterns to parse correctly.'}
+                  {bulkImportMode === 'double' && 'Perfect for lists where each student uses TWO adjacent lines (Line 1: Name, Class/Sec, Roll, DOB, Father. Line 2: Mother, Phone, Address, Blood Group).'}
+                  {bulkImportMode === 'excel' && 'Perfect for simple copy-pasted rows from Microsoft Excel or Google Sheets (1 row per student).'}
+                  {bulkImportMode === 'json' && 'Required configuration format: an array of JSON objects containing keys Name, "student type", "Class / Section", etc.'}
+                </span>
+              </div>
+
+              {/* Input Area */}
               <div>
-                <label className="label-text">JSON Data (Paste list of student objects)</label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-[10px] font-black text-text-heading uppercase tracking-wider">
+                    2. Paste Raw Academic Text or Data Rows Below
+                  </label>
+                  {bulkStudentInput && (
+                    <button 
+                      onClick={() => setBulkStudentInput('')} 
+                      className="text-[9px] font-bold text-red-600 uppercase tracking-widest hover:underline"
+                    >
+                      Clear Input
+                    </button>
+                  )}
+                </div>
                 <textarea 
-                  className="input-field min-h-[300px] font-mono text-[10px]" 
-                  placeholder='[{"Name": "Kevin Molsom", "student type": "OLD", "Class / Section": "2", "SECTION": "A", "ROLL NO": 1, ...}]'
+                  className="input-field min-h-[140px] font-mono text-[10px] p-4 bg-slate-50 border border-slate-200 focus:bg-white transition-all rounded-xl focus:ring-2 focus:ring-primary/20" 
+                  placeholder={
+                    bulkImportMode === 'double' 
+                      ? 'Renonika Debbarma Nursery (A) 10 27/10/2022 Manesh Debbarma\nResna Debbarma 9863867093 Debta Bari B+'
+                      : 'Kevin Molsom\tOLD\t2\tA\t1\t20/11/2018\tRamesh Hari Molsom'
+                  }
                   value={bulkStudentInput}
                   onChange={(e) => setBulkStudentInput(e.target.value)}
                 />
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-2xl flex flex-col gap-3">
-                <p className="text-[10px] font-black text-primary uppercase tracking-widest">Import Template</p>
-                <div className="grid grid-cols-1 gap-3">
+              {/* Live Preview Section */}
+              <div className="space-y-2 shrink-0">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-black text-text-heading uppercase tracking-wider">
+                    3. Live Parsed Preview Table
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest">
+                      Matched: {parsedStudentsPreview().length} Students
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs max-h-[220px] overflow-y-auto custom-scrollbar">
+                  {parsedStudentsPreview().length > 0 ? (
+                    <table className="w-full text-left border-collapse text-[11px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[9px]">
+                          <th className="py-2 px-3">#</th>
+                          <th className="py-2 px-3">Student Name</th>
+                          <th className="py-2 px-3">Class/Section</th>
+                          <th className="py-2 px-3">Roll No</th>
+                          <th className="py-2 px-3">D.O.B</th>
+                          <th className="py-2 px-3">Father Name</th>
+                          <th className="py-2 px-3">Mother Name</th>
+                          <th className="py-2 px-3">Mobile Phone</th>
+                          <th className="py-2 px-3">Blood</th>
+                          <th className="py-2 px-3">Address</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {parsedStudentsPreview().map((student, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-2 px-3 font-mono text-slate-400 font-bold">{idx + 1}</td>
+                            <td className="py-2 px-3 font-bold text-text-heading uppercase">{student.name || '--'}</td>
+                            <td className="py-2 px-3">
+                              <span className="bg-primary/15 text-primary text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md">
+                                {student.class || 'Nursery'} ({student.section || 'A'})
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 font-mono font-bold text-slate-700">{student.rollNumber || '--'}</td>
+                            <td className="py-2 px-3 font-mono">{student.dob || '--'}</td>
+                            <td className="py-2 px-3 text-slate-600 font-semibold">{student.fatherName || '--'}</td>
+                            <td className="py-2 px-3 text-slate-600">{student.motherName || '--'}</td>
+                            <td className="py-2 px-3 font-mono">{student.fatherMobile || '--'}</td>
+                            <td className="py-2 px-3">
+                              {student.bloodGroup ? (
+                                <span className="bg-red-50 text-red-700 border border-red-150 text-[9px] font-black px-1.5 py-0.5 rounded-sm">
+                                  {student.bloodGroup}
+                                </span>
+                              ) : '--'}
+                            </td>
+                            <td className="py-2 px-3 max-w-[150px] truncate text-slate-500" title={student.address}>
+                              {student.address || '--'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="py-12 text-center flex flex-col items-center justify-center p-6 grayscale opacity-80">
+                      <FileSpreadsheet size={32} className="text-slate-300 mb-2" />
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                        Ready to preview parsed student records.
+                      </p>
+                      <p className="text-[9px] text-slate-400 mt-1 max-w-sm font-medium leading-relaxed">
+                        Data pasted above will instantly automatically split, map columns, formatting, and update this table.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Load Templates Helper */}
+              {parsedStudentsPreview().length === 0 && (
+                <div className="p-4 bg-slate-50 rounded-2xl flex flex-col gap-3">
+                  <p className="text-[10px] font-black text-primary uppercase tracking-widest">Load Template Sample</p>
                   <button 
-                    onClick={() => setBulkStudentInput(JSON.stringify([
-                      { "student type": "OLD", "Name": "Kevin Molsom", "Class / Section": "2", "SECTION": "A", "ROLL NO": 1, "D.O.B": "20/11/2018", "Father Name": "Ramesh Hari Molsom", "Mother Name": "Ramengi Molsom", "FATHERS PHONE No.": "9366556971", "Blood Group": "A+", "Address": "Chinta Kumar Para, P.O - Khasiamangal, P.S - Teliamura, Dist. - Khowai Tripura - 799205" },
-                      { "student type": "OLD", "Name": "Samuel Debbarma", "Class / Section": "2", "SECTION": "A", "ROLL NO": 2, "D.O.B": "19/06/2018", "Father Name": "Mrinal Debbarma", "Mother Name": "Sambhu Laxmi Debbarma", "FATHERS PHONE No.": "8787804909", "Blood Group": "B+", "Address": "Bahadur Sardar Para, P.O - Khasiamangal, P.S - Teliamura, Dist. - Khowai Tripura - 799205" }
-                    ], null, 2))}
+                    onClick={() => {
+                      setBulkImportMode('double');
+                      setBulkStudentInput(
+                        "Renonika Debbarma\tNursery (A)\t10\t27/10/2022\tManesh Debbarma\n" +
+                        "Resna Debbarma\t9863867093\tDebta Bari\tB+\n" +
+                        "Priyansh Debbarma\tNursery (A)\t9\t01/08/2022\tSankar Debbarma\n" +
+                        "Pritana Debbarma\t9612705436\tAshram sardar para\tA+"
+                      );
+                    }}
                     className="text-left p-3 rounded-xl bg-white border border-slate-200 hover:border-primary/50 transition-all text-[10px] font-bold flex items-center justify-between group"
                   >
-                    <span>Load Sample Data (Matching Image Columns)</span>
+                    <span>Load Sample Data (Matching Screenshot Image Columns)</span>
                     <Plus size={12} className="text-slate-300 group-hover:text-primary transition-all" />
                   </button>
                 </div>
-              </div>
+              )}
             </div>
 
-            <div className="flex gap-4 mt-6 shrink-0">
+            {/* Modal Actions */}
+            <div className="flex gap-4 mt-6 shrink-0 pt-4 border-t border-slate-150">
               <button 
-                onClick={() => setShowBulkStudentModal(false)}
-                className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all uppercase tracking-widest text-xs"
+                onClick={() => {
+                  setShowBulkStudentModal(false);
+                  setBulkStudentInput('');
+                }}
+                className="flex-1 py-3.5 font-bold text-text-sub hover:bg-slate-50 rounded-xl border border-slate-200 transition-all uppercase tracking-widest text-xs"
               >
-                Cancel
+                Close List
               </button>
               <button 
+                disabled={parsedStudentsPreview().length === 0}
                 onClick={async () => {
                   try {
-                    const data = JSON.parse(bulkStudentInput);
-                    if (!Array.isArray(data)) throw new Error('Data must be an array');
+                    const parsedData = parsedStudentsPreview();
+                    if (parsedData.length === 0) {
+                      alert('Please input your text data or upload a file first.');
+                      return;
+                    }
                     
                     let successCount = 0;
-                    for (const s of data) {
-                      const studentPayload = {
-                        first_name: s.Name || s.name || '',
-                        surname: '',
-                        student_type: s["student type"] || s.studentType || 'OLD',
-                        academic_session: schoolProfile.currentSession || '2023-24',
-                        class_name: s["Class / Section"] || s.class || '',
-                        section_name: s["SECTION"] || s.section || '',
-                        roll_number: s["ROLL NO"] || s.rollNumber || '',
-                        date_of_birth: s["D.O.B"] || s.dob || '',
-                        father_name: s["Father Name"] || s.fatherName || '',
-                        mother_name: s["Mother Name"] || s.motherName || '',
-                        father_mobile: s["FATHERS PHONE No."] || s.fatherMobile || '',
-                        blood_group: s["Blood Group"] || s.bloodGroup || '',
-                        residential_address: s["Address"] || s.address || '',
-                        student_id: `STD-${Math.floor(100000 + Math.random() * 900000)}`,
+                    let lastErrorMessage = '';
+                    const missing = (window as any)._missing_student_cols || new Set();
+                    if (!(window as any)._missing_student_cols) {
+                      (window as any)._missing_student_cols = missing;
+                    }
+
+                    for (const s of parsedData) {
+                      const studentPayload: any = {
+                        first_name: s.name || '',
+                        surname: s.surname || '',
+                        student_type: s.studentType || 'OLD',
+                        academic_session: schoolProfile?.currentSession || '2023-24',
+                        class_name: s.class || '',
+                        section_name: s.section || 'A',
+                        roll_number: s.rollNumber || '',
+                        date_of_birth: s.dob || null,
+                        father_name: s.fatherName || '',
+                        mother_name: s.motherName || '',
+                        father_mobile: s.fatherMobile || '',
+                        blood_group: s.bloodGroup || '',
+                        residential_address: s.address || '',
+                        student_id: s.studentId || `STD-${Math.floor(100000 + Math.random() * 900000)}`,
                         admission_date: new Date().toISOString().split('T')[0]
                       };
 
                       if (supabase) {
-                        const { error } = await supabase.from('students').insert([studentPayload]);
-                        if (!error) successCount++;
+                        let insertedSuccessfully = false;
+                        let lastErr: any = null;
+                        
+                        // Resilient bulk save, auto-strips non-existent columns (e.g. student_type, academic_session)
+                        for (let attempt = 0; attempt < 10; attempt++) {
+                          Object.keys(studentPayload).forEach(k => { 
+                            if (missing.has(k)) delete studentPayload[k]; 
+                          });
+
+                          try {
+                            const { error } = await supabase.from('students').insert([studentPayload]);
+                            if (error) {
+                              lastErr = error;
+                              // If column issue, match standard save behaviour and retry
+                              if (error.code === 'PGRST204' || error.message.toLowerCase().includes('column') || error.message.toLowerCase().includes('does not exist')) {
+                                const m = error.message.match(/column "(.*?)"/i) || error.message.match(/column (.*?) /i);
+                                if (m && m[1]) {
+                                  missing.add(m[1]);
+                                  continue;
+                                }
+                              }
+                              break;
+                            } else {
+                              insertedSuccessfully = true;
+                              break;
+                            }
+                          } catch (e: any) {
+                            lastErr = e;
+                            break;
+                          }
+                        }
+
+                        if (insertedSuccessfully) {
+                          successCount++;
+                        } else if (lastErr) {
+                          console.error("Supabase bulk insert failed for student:", s.name, lastErr);
+                          lastErrorMessage = lastErr.message || JSON.stringify(lastErr);
+                        }
                       } else {
                         setStudents((prev: any) => [...prev, {
                           id: Math.random().toString(36).substr(2, 9),
@@ -19451,11 +20435,19 @@ const schoolMigrations = `
                       }
                     }
 
-                    alert(`Successfully imported ${successCount} students.`);
-                    setShowBulkStudentModal(false);
-                    setBulkStudentInput('');
+                    if (successCount === parsedData.length) {
+                      alert(`Successfully imported ${successCount} students.`);
+                      setShowBulkStudentModal(false);
+                      setBulkStudentInput('');
+                    } else if (successCount > 0) {
+                      alert(`Partially imported ${successCount} out of ${parsedData.length} students.\n\nLast Encountered Database Error:\n"${lastErrorMessage}"`);
+                      setShowBulkStudentModal(false);
+                      setBulkStudentInput('');
+                    } else {
+                      alert(`Import failed. Successfully imported 0 students.\n\nDatabase Error:\n"${lastErrorMessage || 'Unknown Database Error'}"`);
+                    }
                     
-                    if (supabase) {
+                    if (supabase && successCount > 0) {
                       const { data: studentsData } = await supabase.from('students').select('*');
                       if (studentsData) {
                         setStudents(studentsData.map((s: any) => ({
@@ -19478,12 +20470,16 @@ const schoolMigrations = `
                       }
                     }
                   } catch (err) {
-                    alert('Invalid JSON data or error during import.');
+                    alert('Error importing student data: ' + (err as Error).message);
                   }
                 }}
-                className="flex-1 btn-primary py-4 shadow-xl shadow-primary/20 uppercase tracking-widest text-xs"
+                className={`flex-1 py-3.5 shadow-xl shadow-primary/20 uppercase tracking-widest text-[11px] font-black rounded-xl transition-all ${
+                  parsedStudentsPreview().length > 0
+                    ? 'btn-primary'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                }`}
               >
-                Process Student Import
+                Process Student Import ({parsedStudentsPreview().length})
               </button>
             </div>
           </motion.div>
@@ -19552,145 +20548,7 @@ const schoolMigrations = `
         )}
       </AnimatePresence>
 
-      {showBulkStudentModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-[32px] p-8 shadow-2xl relative z-10 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full -mr-16 -mt-16"></div>
-            <div className="flex justify-between items-center mb-6 shrink-0">
-              <div>
-                <h3 className="text-2xl font-black text-text-heading">Bulk Student Import</h3>
-                <p className="text-sm text-text-sub font-medium">Add multiple students using JSON format.</p>
-              </div>
-              <button onClick={() => setShowBulkStudentModal(false)} className="p-2 hover:bg-slate-100 rounded-full">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
-              <div>
-                <label className="label-text">JSON Data (Paste list of student objects)</label>
-                <textarea 
-                  className="input-field min-h-[300px] font-mono text-[10px]" 
-                  placeholder='[{"Name": "Kevin Molsom", "student type": "OLD", "Class / Section": "2", "SECTION": "A", "ROLL NO": 1, ...}]'
-                  value={bulkStudentInput}
-                  onChange={(e) => setBulkStudentInput(e.target.value)}
-                />
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-2xl flex flex-col gap-3">
-                <p className="text-[10px] font-black text-primary uppercase tracking-widest">Import Template</p>
-                <div className="grid grid-cols-1 gap-3">
-                  <button 
-                    onClick={() => setBulkStudentInput(JSON.stringify([
-                      { "student type": "OLD", "Name": "Kevin Molsom", "Class / Section": "2", "SECTION": "A", "ROLL NO": 1, "D.O.B": "20/11/2018", "Father Name": "Ramesh Hari Molsom", "Mother Name": "Ramengi Molsom", "FATHERS PHONE No.": "9366556971", "Blood Group": "A+", "Address": "Chinta Kumar Para, P.O - Khasiamangal, P.S - Teliamura, Dist. - Khowai Tripura - 799205" },
-                      { "student type": "OLD", "Name": "Samuel Debbarma", "Class / Section": "2", "SECTION": "A", "ROLL NO": 2, "D.O.B": "19/06/2018", "Father Name": "Mrinal Debbarma", "Mother Name": "Sambhu Laxmi Debbarma", "FATHERS PHONE No.": "8787804909", "Blood Group": "B+", "Address": "Bahadur Sardar Para, P.O - Khasiamangal, P.S - Teliamura, Dist. - Khowai Tripura - 799205" }
-                    ], null, 2))}
-                    className="text-left p-3 rounded-xl bg-white border border-slate-200 hover:border-primary/50 transition-all text-[10px] font-bold flex items-center justify-between group"
-                  >
-                    <span>Load Sample Data (Matching Image Columns)</span>
-                    <Plus size={12} className="text-slate-300 group-hover:text-primary transition-all" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-4 mt-6 shrink-0">
-              <button 
-                onClick={() => setShowBulkStudentModal(false)}
-                className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all uppercase tracking-widest text-xs"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={async () => {
-                  try {
-                    const data = JSON.parse(bulkStudentInput);
-                    if (!Array.isArray(data)) throw new Error('Data must be an array');
-                    
-                    let successCount = 0;
-                    for (const s of data) {
-                      const studentPayload = {
-                        first_name: s.Name || s.name || '',
-                        surname: '',
-                        student_type: s["student type"] || s.studentType || 'OLD',
-                        academic_session: schoolProfile.currentSession || '2023-24',
-                        class_name: s["Class / Section"] || s.class || '',
-                        section_name: s["SECTION"] || s.section || '',
-                        roll_number: s["ROLL NO"] || s.rollNumber || '',
-                        date_of_birth: s["D.O.B"] || s.dob || '',
-                        father_name: s["Father Name"] || s.fatherName || '',
-                        mother_name: s["Mother Name"] || s.motherName || '',
-                        father_mobile: s["FATHERS PHONE No."] || s.fatherMobile || '',
-                        blood_group: s["Blood Group"] || s.bloodGroup || '',
-                        residential_address: s["Address"] || s.address || '',
-                        student_id: `STD-${Math.floor(100000 + Math.random() * 900000)}`,
-                        admission_date: new Date().toISOString().split('T')[0]
-                      };
-
-                      if (supabase) {
-                        const { error } = await supabase.from('students').insert([studentPayload]);
-                        if (!error) successCount++;
-                      } else {
-                        setStudents((prev: any) => [...prev, {
-                          id: Math.random().toString(36).substr(2, 9),
-                          studentId: studentPayload.student_id,
-                          name: studentPayload.first_name,
-                          surname: studentPayload.surname,
-                          studentType: studentPayload.student_type,
-                          session: studentPayload.academic_session,
-                          class: studentPayload.class_name,
-                          section: studentPayload.section_name,
-                          rollNumber: studentPayload.roll_number,
-                          dob: studentPayload.date_of_birth,
-                          fatherName: studentPayload.father_name,
-                          motherName: studentPayload.mother_name,
-                          fatherMobile: studentPayload.father_mobile,
-                          bloodGroup: studentPayload.blood_group,
-                          address: studentPayload.residential_address,
-                          admissionDate: studentPayload.admission_date
-                        }]);
-                        successCount++;
-                      }
-                    }
-
-                    alert(`Successfully imported ${successCount} students.`);
-                    setShowBulkStudentModal(false);
-                    setBulkStudentInput('');
-                    
-                    if (supabase) {
-                      const { data: studentsData } = await supabase.from('students').select('*');
-                      if (studentsData) {
-                        setStudents(studentsData.map((s: any) => ({
-                          id: s.id,
-                          studentId: s.student_id,
-                          name: s.first_name,
-                          surname: s.surname,
-                          studentType: s.student_type,
-                          class: s.class_name,
-                          section: s.section_name,
-                          rollNumber: s.roll_number,
-                          dob: s.date_of_birth,
-                          fatherName: s.father_name,
-                          motherName: s.mother_name,
-                          fatherMobile: s.father_mobile,
-                          bloodGroup: s.blood_group,
-                          address: s.residential_address,
-                          admissionDate: s.admission_date
-                        })));
-                      }
-                    }
-                  } catch (err) {
-                    alert('Invalid JSON data or error during import.');
-                  }
-                }}
-                className="flex-1 btn-primary py-4 shadow-xl shadow-primary/20 uppercase tracking-widest text-xs"
-              >
-                Process Student Import
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* Duplicated block removed to prevent state conflicts */}
     </div>
   );
 }
