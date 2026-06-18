@@ -116,10 +116,12 @@ import {
 } from 'recharts';
 
 import { SqlEditor } from './components/SqlEditor';
+import { WhatsAppDashboard } from './components/WhatsAppDashboard';
+import { TRANSCRIBED_STUDENTS_TSV } from './data/transcribedStudents';
 
 // --- Types ---
 
-type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor' | 'attendance-public';
+type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor' | 'attendance-public' | 'whatsapp-web';
 
 // --- Utilities ---
 
@@ -1694,6 +1696,18 @@ const Dashboard = ({
   const isTeacher = currentUser?.role === 'teacher' || currentUser?.role === 'staff' || isWarden;
   const isStudent = currentUser?.role === 'student' || currentUser?.role === 'parent';
 
+  const [waConnectedCount, setWaConnectedCount] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    if (isAdmin || isSuperAdmin) {
+      fetch("/api/whatsapp/status")
+        .then(res => res.json())
+        .then(data => {
+          setWaConnectedCount(data.status === "Connected");
+        })
+        .catch(e => console.error("Error checking WA status:", e));
+    }
+  }, [isAdmin, isSuperAdmin]);
+
   const today = getTodayDate();
   const studentsPresent = attendance.filter((a: any) => (a.date === today || a.date === formatDate(today)) && a.status === 'Present').length;
   const teachersPresent = staffAttendance.filter((a: any) => (a.date === today || a.date === formatDate(today)) && a.status === 'Present').length;
@@ -1764,6 +1778,29 @@ const Dashboard = ({
       {/* Admin/Super Admin/Accountant View */}
       {(isSuperAdmin || isAdmin || currentUser?.role === 'accountant') && (
         <>
+          {waConnectedCount === false && (
+            <div id="wa-disconnect-banner" className="p-5 bg-amber-50 border border-amber-200 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+              <div className="flex gap-3">
+                <span className="p-3 bg-amber-100/80 text-amber-800 rounded-2xl flex items-center justify-center shrink-0 h-12 w-12">
+                  <MessageSquare size={24} className="text-amber-700" />
+                </span>
+                <div>
+                  <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight font-sans">WhatsApp QR Login Outstanding</h4>
+                  <p className="text-slate-600 text-xs mt-0.5 leading-relaxed font-semibold">
+                    Link your school WhatsApp account via QR Code scan to authorize automated student absence reports, fee dues notifications, and homework broadcasts directly to parents' mobile numbers.
+                  </p>
+                </div>
+              </div>
+              <button 
+                id="wa-link-btn"
+                onClick={() => setView('whatsapp-web')}
+                className="whitespace-nowrap px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-bold uppercase text-[10px] tracking-wide shadow-md shadow-amber-600/10 transition-all cursor-pointer self-start md:self-center"
+              >
+                Scan WhatsApp QR Code →
+              </button>
+            </div>
+          )}
+
           {/* Stats Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
             {(isSuperAdmin || isAdmin) && (
@@ -12850,7 +12887,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
   );
 };
 
-const CommunicatePanel = ({ notifications, setNotifications, notices, setNotices, templates, setTemplates, currentUser }: any) => {
+const CommunicatePanel = ({ notifications, setNotifications, notices, setNotices, templates, setTemplates, currentUser, schoolProfile }: any) => {
   const isAdmin = currentUser?.role?.toLowerCase().includes('admin') || 
                   currentUser?.role?.toLowerCase().includes('principal') || 
                   currentUser?.role?.toLowerCase().includes('headmaster') ||
@@ -13063,7 +13100,8 @@ const CommunicatePanel = ({ notifications, setNotifications, notices, setNotices
         {[
           { id: 'notice-board', label: 'Notice Board', icon: Bell },
           { id: 'send-message', label: 'Send Email/WhatsApp', icon: MessageCircle },
-          { id: 'templates', label: 'Templates', icon: FileText }
+          { id: 'templates', label: 'Templates', icon: FileText },
+          { id: 'whatsapp', label: 'WhatsApp ERP Dashboard', icon: MessageSquare }
         ].map((tab) => (
           <button
             key={tab.id}
@@ -13215,6 +13253,10 @@ const CommunicatePanel = ({ notifications, setNotifications, notices, setNotices
             </button>
           )}
         </div>
+      )}
+
+      {activeTab === 'whatsapp' && (
+        <WhatsAppDashboard schoolProfile={schoolProfile} supabase={supabase} />
       )}
 
       {/* Add Template Modal */}
@@ -15039,10 +15081,6 @@ export default function App() {
           ALTER TABLE students ADD COLUMN IF NOT EXISTS relations JSONB DEFAULT '[]'::jsonb;
           ALTER TABLE students ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]'::jsonb;
           
-          -- Making name columns nullable to prevent blockers
-          ALTER TABLE students ALTER COLUMN first_name DROP NOT NULL;
-          ALTER TABLE students ALTER COLUMN surname DROP NOT NULL;
-          
           -- Fix legacy class/section blockers
           DO $$ 
           BEGIN 
@@ -15063,6 +15101,10 @@ export default function App() {
 
           ALTER TABLE students ADD COLUMN IF NOT EXISTS first_name TEXT;
           ALTER TABLE students ADD COLUMN IF NOT EXISTS surname TEXT;
+
+          -- Making name columns nullable to prevent blockers
+          ALTER TABLE students ALTER COLUMN first_name DROP NOT NULL;
+          ALTER TABLE students ALTER COLUMN surname DROP NOT NULL;
           ALTER TABLE students ADD COLUMN IF NOT EXISTS title TEXT;
           ALTER TABLE students ADD COLUMN IF NOT EXISTS caste TEXT;
           ALTER TABLE students ADD COLUMN IF NOT EXISTS category TEXT;
@@ -15631,9 +15673,53 @@ const schoolMigrations = `
           ALTER TABLE school_profile ADD COLUMN IF NOT EXISTS accountant_password TEXT;
         `;
 
+        const whatsappMigrations = `
+          CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            session_name TEXT UNIQUE DEFAULT 'default',
+            status TEXT DEFAULT 'Disconnected',
+            phone_number TEXT,
+            last_sync TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS whatsapp_message_logs (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            recipient_name TEXT DEFAULT '',
+            recipient_number TEXT NOT NULL,
+            recipient_type TEXT DEFAULT 'student',
+            message_content TEXT,
+            message_type TEXT DEFAULT 'text',
+            attachment_url TEXT,
+            status TEXT DEFAULT 'sent',
+            error_message TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            name TEXT NOT NULL,
+            template_id UUID,
+            target_audience TEXT DEFAULT 'all',
+            status TEXT DEFAULT 'draft',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+
+          CREATE TABLE IF NOT EXISTS whatsapp_incoming (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            sender_number TEXT NOT NULL,
+            sender_name TEXT,
+            message_content TEXT,
+            received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+        `;
+
         try {
           const { data: res1, error: err1 } = await supabase.rpc('exec_sql', { sql_query: securityMigrations });
           if (err1) console.error('Security Migrations Error:', err1);
+          
+          const { data: resWhatsapp, error: errWhatsapp } = await supabase.rpc('exec_sql', { sql_query: whatsappMigrations });
+          if (errWhatsapp) console.error('WhatsApp Migrations Error:', errWhatsapp);
           
           const { data: resSchool, error: errSchool } = await supabase.rpc('exec_sql', { sql_query: schoolMigrations });
           if (errSchool) console.error('School Profile Migrations Error:', errSchool);
@@ -15824,11 +15910,11 @@ const schoolMigrations = `
   const [selectedStudentQR, setSelectedStudentQR] = useState<any>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [schoolProfile, setSchoolProfile] = useState<any>({
-    name: 'SUBRAI MISSION CONVENT SCHOOL',
+    name: 'Hope English School',
     contact: '+91 9436122607',
     gst: 'TR/SCH/2024/001',
     regNo: 'TRUST/2011/SMT',
-    email: 'info@subraimission.org',
+    email: 'info@hopeenglishschool.org',
     state: '16-Tripura',
     currentSession: '2025-26',
     sessions: ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28', '2028-29'],
@@ -16027,9 +16113,16 @@ const schoolMigrations = `
       // Fetch School Profile
       const { data: profile } = await supabase.from('school_profile').select('*').limit(1).single();
       if (profile) {
+        let loadedName = profile.school_name || 'Hope English School';
+        if (loadedName === 'SUBRAI MISSION CONVENT SCHOOL') {
+          loadedName = 'Hope English School';
+          supabase.from('school_profile').update({ school_name: 'Hope English School' }).eq('id', profile.id).then(({ error }) => {
+            if (error) console.error('Failed to auto-update school name in DB:', error);
+          });
+        }
         setSchoolProfile((prev: any) => ({
           ...prev,
-          name: profile.school_name || prev.name,
+          name: loadedName,
           contact: profile.contact_number || prev.contact,
           gst: profile.gst_number || prev.gst,
           regNo: profile.registration_number || prev.regNo,
@@ -17127,10 +17220,26 @@ const schoolMigrations = `
           if (error) {
             lastError = error;
             // Only retry if it's a column missing error
-            if (error.code === 'PGRST204' || error.message.toLowerCase().includes('column') || error.message.toLowerCase().includes('does not exist')) {
-              const m = error.message.match(/column "(.*?)"/i) || error.message.match(/column (.*?) /i);
+            if (error.code === 'PGRST204' || error.message.toLowerCase().includes('column') || error.message.toLowerCase().includes('does not exist') || error.message.toLowerCase().includes('schema cache')) {
+              let columnFound = false;
+              const m = error.message.match(/column "(.*?)"/i) 
+                     || error.message.match(/column '(.*?)'/i)
+                     || error.message.match(/column ([a-zA-Z0-9_]+)/i)
+                     || error.message.match(/'(.*?)' column/i)
+                     || error.message.match(/"(.*?)" column/i);
               if (m && m[1]) {
                 missing.add(m[1]);
+                columnFound = true;
+              } else {
+                // Fallback: check if any of the payload keys are contained in the error message
+                Object.keys(currentPayload).forEach(k => {
+                  if (error.message.includes(k)) {
+                    missing.add(k);
+                    columnFound = true;
+                  }
+                });
+              }
+              if (columnFound) {
                 continue;
               }
             }
@@ -17685,6 +17794,15 @@ const schoolMigrations = `
                   label={isSidebarOpen ? "Communication" : ""} 
                   active={view === 'communicate'} 
                   onClick={() => setView('communicate')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                <SidebarItem 
+                  icon={MessageSquare} 
+                  label={isSidebarOpen ? "WhatsApp Web Login" : ""} 
+                  active={view === 'whatsapp-web'} 
+                  onClick={() => setView('whatsapp-web')} 
                   isSidebarOpen={isSidebarOpen}
                 />
               )}
@@ -19125,7 +19243,14 @@ const schoolMigrations = `
                   templates={communicationTemplates}
                   setTemplates={setCommunicationTemplates}
                   currentUser={currentUser}
+                  schoolProfile={schoolProfile}
                 />
+              </motion.div>
+            )}
+
+            {view === 'whatsapp-web' && (
+              <motion.div key="whatsapp-web" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                <WhatsAppDashboard schoolProfile={schoolProfile} supabase={supabase} />
               </motion.div>
             )}
 
@@ -20204,18 +20329,31 @@ const schoolMigrations = `
 
               {/* Input Area */}
               <div>
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
                   <label className="text-[10px] font-black text-text-heading uppercase tracking-wider">
                     2. Paste Raw Academic Text or Data Rows Below
                   </label>
-                  {bulkStudentInput && (
-                    <button 
-                      onClick={() => setBulkStudentInput('')} 
-                      className="text-[9px] font-bold text-red-600 uppercase tracking-widest hover:underline"
+                  <div className="flex gap-3 items-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkStudentInput(TRANSCRIBED_STUDENTS_TSV);
+                        setBulkImportMode('excel');
+                      }}
+                      className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-[10px] font-black uppercase tracking-wider border border-emerald-200/50 flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
                     >
-                      Clear Input
+                      ✨ Load Student List from Phone Image ({TRANSCRIBED_STUDENTS_TSV.split('\n').length} Students)
                     </button>
-                  )}
+                    {bulkStudentInput && (
+                      <button 
+                        type="button"
+                        onClick={() => setBulkStudentInput('')} 
+                        className="text-[9px] font-bold text-red-600 uppercase tracking-widest hover:underline"
+                      >
+                        Clear Input
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <textarea 
                   className="input-field min-h-[140px] font-mono text-[10px] p-4 bg-slate-50 border border-slate-200 focus:bg-white transition-all rounded-xl focus:ring-2 focus:ring-primary/20" 
@@ -20388,10 +20526,26 @@ const schoolMigrations = `
                             if (error) {
                               lastErr = error;
                               // If column issue, match standard save behaviour and retry
-                              if (error.code === 'PGRST204' || error.message.toLowerCase().includes('column') || error.message.toLowerCase().includes('does not exist')) {
-                                const m = error.message.match(/column "(.*?)"/i) || error.message.match(/column (.*?) /i);
+                              if (error.code === 'PGRST204' || error.message.toLowerCase().includes('column') || error.message.toLowerCase().includes('does not exist') || error.message.toLowerCase().includes('schema cache')) {
+                                let columnFound = false;
+                                const m = error.message.match(/column "(.*?)"/i) 
+                                       || error.message.match(/column '(.*?)'/i)
+                                       || error.message.match(/column ([a-zA-Z0-9_]+)/i)
+                                       || error.message.match(/'(.*?)' column/i)
+                                       || error.message.match(/"(.*?)" column/i);
                                 if (m && m[1]) {
                                   missing.add(m[1]);
+                                  columnFound = true;
+                                } else {
+                                  // Fallback: check if any of the payload keys are contained in the error message
+                                  Object.keys(studentPayload).forEach(k => {
+                                    if (error.message.includes(k)) {
+                                      missing.add(k);
+                                      columnFound = true;
+                                    }
+                                  });
+                                }
+                                if (columnFound) {
                                   continue;
                                 }
                               }
@@ -21859,7 +22013,7 @@ const IDCardsModule = ({
     const isTeacher = type === 'teacher';
     const themeColor = isTeacher ? 'bg-red-600' : 'bg-[#0047AB]'; // Red for teacher, Deep Blue for students
     const themeText = isTeacher ? 'text-red-600' : 'text-[#0047AB]';
-    const schoolName = schoolProfile?.name || 'SUBRAI MISSION CONVENT SCHOOL';
+    const schoolName = schoolProfile?.name || 'Hope English School';
     const schoolContact = schoolProfile?.contact || '';
     
     const idValue = `${window.location.origin}?id=${person.staffId || person.studentId || person.id || 'N/A'}`;

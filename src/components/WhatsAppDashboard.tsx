@@ -1,0 +1,446 @@
+import React, { useState, useEffect } from "react";
+import { 
+  QrCode, Phone, Shield, RefreshCw, Power, CheckCircle, 
+  AlertCircle, Sparkles, Laptop, Check, HelpCircle, ArrowUpRight, MessageSquare
+} from "lucide-react";
+import QRCode from "react-qr-code";
+import { motion, AnimatePresence } from "motion/react";
+
+export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
+  const [connection, setConnection] = useState({
+    status: "Disconnected",
+    qrCode: "",
+    phoneNumber: "",
+    lastSync: "",
+    mode: "Simulator",
+    error: null as string | null
+  });
+  
+  const [loading, setLoading] = useState(false);
+  const [refreshes, setRefreshes] = useState(0);
+  const [simulatePhone, setSimulatePhone] = useState("+91 94361 22607");
+  const [stayLoggedIn, setStayLoggedIn] = useState(true);
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch("/api/whatsapp/status");
+      const data = await res.json();
+      setConnection(data);
+    } catch (e) {
+      console.error("[WhatsApp REST] Poll status failed:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 3000); // Poll status every 3 seconds
+    return () => clearInterval(interval);
+  }, [refreshes]);
+
+  const handleConnect = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/connect", { method: "POST" });
+      const data = await res.json();
+      setConnection(data.state || connection);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!confirm("Are you sure you want to disconnect, clear saved browser session and log out?")) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/disconnect", { method: "POST" });
+      const data = await res.json();
+      setConnection(data.state);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSimulatedScan = async () => {
+    try {
+      const res = await fetch("/api/whatsapp/simulate-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: simulatePhone })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConnection(data.state);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSetMode = async (mode: "Real" | "Simulator") => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/set-mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConnection(data.state);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#f9f6f0] flex flex-col items-center justify-between font-sans text-slate-800 p-4 md:p-8">
+      
+      {/* Top Section - Download Banner cloned from WhatsApp Web layout */}
+      <div className="w-full max-w-4xl bg-white rounded-3xl p-5 border border-slate-200/60 shadow-sm flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6 transition-all duration-300">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="h-12 w-12 bg-[#25d366]/10 text-[#25d366] rounded-2xl flex items-center justify-center shrink-0">
+            <Laptop size={24} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-sm font-bold text-slate-800">WhatsApp Web Connection Module</h4>
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                connection.mode === "Real" ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"
+              }`}>
+                {connection.mode} Mode
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+              Persist your auth sessions securely. Re-scanning is bypassed using automatic metadata restoration logic.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto lg:justify-end">
+          {/* Connection Mode Selection Tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 mr-2 shrink-0">
+            <button
+              onClick={() => handleSetMode("Simulator")}
+              disabled={loading}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                connection.mode === "Simulator"
+                  ? "bg-white text-indigo-700 shadow-sm border border-indigo-100/50"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Simulator
+            </button>
+            <button
+              onClick={() => handleSetMode("Real")}
+              disabled={loading}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                connection.mode === "Real"
+                  ? "bg-[#25D366] text-white shadow-sm border border-emerald-500/50"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Real WhatsApp
+            </button>
+          </div>
+
+          {connection.status === "Disconnected" || connection.status === "Session Expired" ? (
+            <button
+              onClick={handleConnect}
+              disabled={loading}
+              className="px-5 py-2.5 bg-[#25D366] hover:bg-[#20ba56] text-white rounded-2xl font-black uppercase text-[10px] tracking-wider shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Power size={14} />
+              {loading ? "Starting Core..." : "Connect WhatsApp"}
+            </button>
+          ) : (
+            <button
+              onClick={handleDisconnect}
+              disabled={loading}
+              className="px-5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl font-black uppercase text-[10px] tracking-wider border border-rose-200/60 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Power size={14} />
+              {loading ? "Wiping..." : "Disconnect WhatsApp"}
+            </button>
+          )}
+
+          <button
+            onClick={() => setRefreshes(r => r + 1)}
+            aria-label="Refresh status"
+            className="p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-xl border border-slate-200/50 transition-all cursor-pointer"
+          >
+            <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Container Core */}
+      <div className="w-full max-w-4xl bg-white rounded-[32px] border border-slate-200/80 shadow-md p-6 md:p-12 relative overflow-hidden flex-1 flex flex-col justify-center">
+        
+        <AnimatePresence mode="wait">
+          {connection.status === "Connected" ? (
+            /* AUTHENTICATED SUCCESS VIEW */
+            <motion.div 
+              key="connected-view"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="flex flex-col items-center justify-center text-center space-y-6 py-8"
+            >
+              {/* Success badge */}
+              <div className="relative">
+                <div className="p-8 bg-emerald-50 text-emerald-600 rounded-[32px] inline-block border border-emerald-100 shadow-md">
+                  <CheckCircle size={64} className="animate-pulse" />
+                </div>
+                <span className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1.5 rounded-full border-4 border-white">
+                  <Check size={16} />
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-widest rounded-full">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                  Connected
+                </div>
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight">WhatsApp Connected Successfully</h3>
+                <p className="text-slate-500 text-xs max-w-md mx-auto leading-relaxed font-semibold">
+                  Headless browser instance has paired your mobile number. Automatic communication protocols are actively listening. Output triggers are mapped securely.
+                </p>
+              </div>
+
+              {/* Connected Phone signature panel */}
+              <div className="w-full max-w-md bg-slate-50 border border-slate-100 rounded-2xl p-5 grid grid-cols-2 gap-4 text-left">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Linked Phone</span>
+                  <div className="flex items-center gap-2 text-slate-800">
+                    <Phone className="text-emerald-500 shrink-0" size={16} />
+                    <p className="text-xs font-black tracking-tight">{connection.phoneNumber || "Verified Phone"}</p>
+                  </div>
+                </div>
+                <div className="space-y-1 border-l border-slate-200 pl-4">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active State</span>
+                  <div className="flex items-center gap-2 text-slate-800">
+                    <Shield className="text-indigo-500 shrink-0" size={16} />
+                    <p className="text-xs font-black text-slate-500">Persistent Auth</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={handleDisconnect}
+                  className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-2xl font-extrabold uppercase text-[11px] tracking-wider border border-rose-200/60 transition-all cursor-pointer"
+                >
+                  Disconnect WhatsApp
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            /* WHATSAPP WEB SCAN CLONE VIEW */
+            <motion.div 
+              key="auth-view"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-center"
+            >
+              {/* Left Column: Authentic instructions with circled numbers */}
+              <div className="md:col-span-7 space-y-6 text-left">
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-normal text-slate-700 tracking-tight font-sans">Scan QR Code to Connect WhatsApp</h2>
+                  <p className="text-slate-400 text-xs">Authorize standard web pairing to stream ERP events seamlessly.</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-7 h-7 bg-slate-100 text-slate-600 font-bold flex items-center justify-center rounded-full text-xs shrink-0 mt-0.5 border border-slate-200">
+                      1
+                    </div>
+                    <p className="text-slate-600 text-sm font-medium pt-1">
+                      Open <strong className="text-slate-800 font-extrabold">WhatsApp</strong> on your phone.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    <div className="w-7 h-7 bg-slate-100 text-slate-600 font-bold flex items-center justify-center rounded-full text-xs shrink-0 mt-0.5 border border-slate-200">
+                      2
+                    </div>
+                    <p className="text-slate-600 text-sm font-medium pt-1">
+                      Go to <strong className="text-slate-800 font-extrabold">Settings</strong> or <strong className="text-slate-800">Linked Devices</strong>.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    <div className="w-7 h-7 bg-slate-100 text-slate-600 font-bold flex items-center justify-center rounded-full text-xs shrink-0 mt-0.5 border border-slate-200">
+                      3
+                    </div>
+                    <p className="text-slate-600 text-sm font-medium pt-1">
+                      Tap <strong className="text-[#25D366] font-extrabold">Link a Device</strong>.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    <div className="w-7 h-7 bg-slate-100 text-slate-600 font-bold flex items-center justify-center rounded-full text-xs shrink-0 mt-0.5 border border-slate-200">
+                      4
+                    </div>
+                    <p className="text-slate-600 text-sm font-medium pt-1">
+                      Scan the QR code displayed on this page.
+                    </p>
+                  </div>
+                </div>
+
+                {/* stay logged in & support link */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-slate-100">
+                  <label htmlFor="keep-logged-in" className="flex items-center gap-2 cursor-pointer select-none group">
+                    <input 
+                      id="keep-logged-in"
+                      type="checkbox" 
+                      checked={stayLoggedIn}
+                      onChange={(e) => setStayLoggedIn(e.target.checked)}
+                      className="rounded border-slate-300 text-[#25D366] focus:ring-[#25D366] w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
+                      Stay logged in on this browser
+                    </span>
+                  </label>
+
+                  <a 
+                    href="https://faq.whatsapp.com/web" 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="text-xs font-bold text-[#00a884] hover:underline flex items-center gap-1"
+                  >
+                    Need help? <ArrowUpRight size={14} />
+                  </a>
+                </div>
+              </div>
+
+              {/* Right Column: Original QR scan container */}
+              <div className="md:col-span-5 flex flex-col items-center justify-center">
+                <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-md relative w-full max-w-[280px] aspect-square flex items-center justify-center">
+                  
+                  {connection.status === "Connecting" ? (
+                    <div className="flex flex-col items-center justify-center space-y-3">
+                      <div className="w-10 h-10 border-4 border-slate-100 border-t-[#25D366] rounded-full animate-spin"></div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Launching</p>
+                    </div>
+                  ) : connection.status === "Waiting for QR" ? (
+                    <div className="flex flex-col items-center justify-center space-y-3">
+                      <div className="w-10 h-10 border-4 border-slate-100 border-t-indigo-600 rounded-full animate-spin"></div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Generating</p>
+                    </div>
+                  ) : (connection.status === "QR Generated" || connection.status === "ScanningQR") && connection.qrCode ? (
+                    /* Renders beautiful customized styling with centered WhatsApp mini square hook */
+                    <div className="relative">
+                      <QRCode 
+                        value={connection.qrCode} 
+                        size={210} 
+                        fgColor="#111827" 
+                        style={{ height: "auto", maxWidth: "100%", width: "100%" }} 
+                      />
+                      <div className="absolute top-[41%] left-[41%] w-[18%] h-[18%] bg-white rounded-xl shadow-lg border border-slate-100 flex items-center justify-center text-[#25D366]">
+                        <MessageSquare size={18} fill="#25D366" className="text-white" />
+                      </div>
+                    </div>
+                  ) : connection.status === "Session Expired" ? (
+                    <div className="flex flex-col items-center justify-center space-y-2 text-center px-4">
+                      <AlertCircle size={36} className="text-rose-500 animate-bounce" />
+                      <p className="text-xs font-bold text-rose-900 uppercase">Session Expired</p>
+                      <p className="text-[9px] text-slate-400 leading-normal">
+                        Your previous session key was invalidated. Re-establish credentials.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center space-y-2 text-center p-4">
+                      <Power size={36} className="text-slate-300" />
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gateway Standby</p>
+                      <button 
+                        onClick={handleConnect}
+                        className="mt-3 px-4 py-2 bg-[#25D366] hover:bg-[#1fbc55] text-white text-[10px] font-bold uppercase rounded-xl tracking-wider transition-all cursor-pointer"
+                      >
+                        Launch QR Code
+                      </button>
+                    </div>
+                  )}
+                  
+                </div>
+
+                {/* Live Status indicator capsule below QR */}
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  <span className={`h-2.5 w-2.5 rounded-full ${
+                    connection.status === "Connecting" ? "bg-blue-500 animate-pulse" :
+                    connection.status === "Waiting for QR" ? "bg-indigo-500 animate-pulse" :
+                    connection.status === "QR Generated" ? "bg-amber-400 animate-ping" :
+                    connection.status === "Session Expired" ? "bg-rose-500" :
+                    "bg-slate-400"
+                  }`} />
+                  <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider">
+                    {connection.status}
+                  </p>
+                </div>
+              </div>
+
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+      </div>
+
+      {/* Sandbox test slider on bottom of screen */}
+      <AnimatePresence>
+        {(connection.status === "QR Generated" || connection.status === "Waiting for QR" || connection.status === "Connecting") && connection.mode === "Simulator" && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="w-full max-w-4xl bg-indigo-50 border border-indigo-100 rounded-3xl p-5 mt-6 space-y-3 text-left shadow-sm"
+          >
+            <div className="flex items-center gap-2 text-indigo-900">
+              <Sparkles size={18} className="text-indigo-600 animate-pulse" />
+              <h5 className="text-xs font-black uppercase tracking-wide">Simulation Assistant Active</h5>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              You are simulating WhatsApp Core inside this sandboxed container. Define a simulated mobile phone number below and tap "Pair Scan" to instant-trigger connection authorized callbacks:
+            </p>
+            <div className="flex gap-2 max-w-sm">
+              <input 
+                type="text" 
+                value={simulatePhone}
+                onChange={(e) => setSimulatePhone(e.target.value)}
+                className="px-4 py-2 bg-white rounded-xl border border-indigo-200 text-xs text-indigo-900 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-400 flex-1"
+                placeholder="+91 94361 22607"
+              />
+              <button 
+                onClick={handleSimulatedScan}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer"
+              >
+                Simulate Scan
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Footer Branding */}
+      <div className="w-full text-center py-6 border-t border-slate-200/50 mt-8 text-[10px] font-black uppercase tracking-widest text-slate-400 flex flex-col sm:flex-row items-center justify-center gap-2">
+        <span>A product of Digital Access powered by Joshoda</span>
+        <span className="hidden sm:inline">•</span>
+        <a 
+          href="https://whatsapp.com" 
+          target="_blank" 
+          rel="noreferrer"
+          className="hover:text-slate-600 transition-colors flex items-center gap-0.5"
+        >
+          Don't have a WhatsApp account? Get started <HelpCircle size={10} />
+        </a>
+      </div>
+
+    </div>
+  );
+};

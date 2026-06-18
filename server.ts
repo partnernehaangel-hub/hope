@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { google } from "googleapis";
+import { whatsappRouter } from "./src/whatsapp_server_routes";
 
 const app = express();
 const PORT = 3000;
@@ -14,6 +15,9 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 app.use(express.json());
+
+// WhatsApp Integration APIs
+app.use("/api/whatsapp", whatsappRouter);
 
 // API routes
 app.get("/api/auth/google/url", (req, res) => {
