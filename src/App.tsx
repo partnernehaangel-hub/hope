@@ -121,7 +121,7 @@ import { TRANSCRIBED_STUDENTS_TSV } from './data/transcribedStudents';
 
 // --- Types ---
 
-type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor' | 'attendance-public' | 'whatsapp-web';
+type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor' | 'attendance-public';
 
 // --- Utilities ---
 
@@ -1778,29 +1778,6 @@ const Dashboard = ({
       {/* Admin/Super Admin/Accountant View */}
       {(isSuperAdmin || isAdmin || currentUser?.role === 'accountant') && (
         <>
-          {waConnectedCount === false && (
-            <div id="wa-disconnect-banner" className="p-5 bg-amber-50 border border-amber-200 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-              <div className="flex gap-3">
-                <span className="p-3 bg-amber-100/80 text-amber-800 rounded-2xl flex items-center justify-center shrink-0 h-12 w-12">
-                  <MessageSquare size={24} className="text-amber-700" />
-                </span>
-                <div>
-                  <h4 className="text-sm font-black text-amber-900 uppercase tracking-tight font-sans">WhatsApp QR Login Outstanding</h4>
-                  <p className="text-slate-600 text-xs mt-0.5 leading-relaxed font-semibold">
-                    Link your school WhatsApp account via QR Code scan to authorize automated student absence reports, fee dues notifications, and homework broadcasts directly to parents' mobile numbers.
-                  </p>
-                </div>
-              </div>
-              <button 
-                id="wa-link-btn"
-                onClick={() => setView('whatsapp-web')}
-                className="whitespace-nowrap px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-bold uppercase text-[10px] tracking-wide shadow-md shadow-amber-600/10 transition-all cursor-pointer self-start md:self-center"
-              >
-                Scan WhatsApp QR Code →
-              </button>
-            </div>
-          )}
-
           {/* Stats Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
             {(isSuperAdmin || isAdmin) && (
@@ -16113,13 +16090,7 @@ const schoolMigrations = `
       // Fetch School Profile
       const { data: profile } = await supabase.from('school_profile').select('*').limit(1).single();
       if (profile) {
-        let loadedName = profile.school_name || 'Hope English School';
-        if (loadedName === 'SUBRAI MISSION CONVENT SCHOOL') {
-          loadedName = 'Hope English School';
-          supabase.from('school_profile').update({ school_name: 'Hope English School' }).eq('id', profile.id).then(({ error }) => {
-            if (error) console.error('Failed to auto-update school name in DB:', error);
-          });
-        }
+        let loadedName = profile.school_name || 'SUBRAI MISSION CONVENT SCHOOL';
         setSchoolProfile((prev: any) => ({
           ...prev,
           name: loadedName,
@@ -17799,15 +17770,6 @@ const schoolMigrations = `
               )}
               {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
                 <SidebarItem 
-                  icon={MessageSquare} 
-                  label={isSidebarOpen ? "WhatsApp Web Login" : ""} 
-                  active={view === 'whatsapp-web'} 
-                  onClick={() => setView('whatsapp-web')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-                <SidebarItem 
                   icon={Coins} 
                   label={isSidebarOpen ? "Income & Expense" : ""} 
                   active={view === 'income-expense'} 
@@ -19245,12 +19207,6 @@ const schoolMigrations = `
                   currentUser={currentUser}
                   schoolProfile={schoolProfile}
                 />
-              </motion.div>
-            )}
-
-            {view === 'whatsapp-web' && (
-              <motion.div key="whatsapp-web" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <WhatsAppDashboard schoolProfile={schoolProfile} supabase={supabase} />
               </motion.div>
             )}
 
@@ -22013,20 +21969,25 @@ const IDCardsModule = ({
     const isTeacher = type === 'teacher';
     const themeColor = isTeacher ? 'bg-red-600' : 'bg-[#0047AB]'; // Red for teacher, Deep Blue for students
     const themeText = isTeacher ? 'text-red-600' : 'text-[#0047AB]';
-    const schoolName = schoolProfile?.name || 'Hope English School';
+    const schoolName = schoolProfile?.name || 'SUBRAI MISSION CONVENT SCHOOL';
     const schoolContact = schoolProfile?.contact || '';
     
     const idValue = `${window.location.origin}?id=${person.staffId || person.studentId || person.id || 'N/A'}`;
 
-    const labels = [
-      { label: 'Father', value: person.fatherName || 'N/A' },
-      { label: 'Mother', value: person.motherName || 'N/A' },
-      { label: 'Class/Desig', value: isTeacher ? (person.designation || 'Teacher') : (person.class + ' ' + person.section) },
-      { label: 'D.O.B', value: person.dob || person.birthDate || 'N/A' },
-      { label: 'Contact', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
-      { label: 'Blood Group', value: person.bloodGroup || 'N/A' },
-      { label: 'Address', value: person.residentialAddress || person.address || 'N/A' },
-    ];
+    const rightDetails = isTeacher 
+      ? [
+          { label: 'D.O.B', value: person.dob || 'N/A' },
+          { label: 'Father/Spouse', value: person.fatherName || 'N/A' },
+          { label: 'Contact No', value: person.mobile || person.phone || 'N/A' },
+          { label: 'Address', value: person.address || 'N/A' },
+        ]
+      : [
+          { label: 'D.O.B', value: person.dob || person.birthDate || 'N/A' },
+          { label: 'Father\'s Name', value: person.fatherName || 'N/A' },
+          { label: 'Mother\'s Name', value: person.motherName || 'N/A' },
+          { label: 'Contact No', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
+          { label: 'Address', value: person.residentialAddress || person.address || 'N/A' },
+        ];
 
     return (
       <div className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl overflow-hidden flex flex-col relative font-sans border border-slate-300 mx-auto rounded-2xl`}>
@@ -22059,15 +22020,15 @@ const IDCardsModule = ({
             </div>
         </div>
 
-        {/* Main Body - Redesigned for "Neatness" */}
+        {/* Main Body - Redesigned for "Neatness" & Complete Visibility */}
         <div className="flex-1 bg-white p-4 pt-8 flex flex-col min-w-0">
-            <div className="flex gap-4 items-stretch mb-4">
-                {/* Photo Section */}
-                <div className="shrink-0 flex flex-col items-center gap-2">
-                    <div className="w-24 h-32 border-2 border-slate-100 p-1 bg-white shadow-md rounded-xl overflow-hidden">
+            <div className="flex gap-4 items-stretch mb-2">
+                {/* Photo Section & Quick Identifiers */}
+                <div className="shrink-0 flex flex-col items-center gap-1.5 w-24">
+                    <div className="w-24 h-28 border-2 border-slate-100 p-1 bg-white shadow-md rounded-xl overflow-hidden">
                         <div className="w-full h-full bg-slate-50 flex items-center justify-center overflow-hidden rounded-lg">
                             {person.photo ? (
-                                <img src={person.photo} alt="" className="w-full h-full object-cover" />
+                                <img src={person.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                                 <div className="flex flex-col items-center gap-1 opacity-20">
                                   <User size={32} className="text-slate-400" />
@@ -22076,21 +22037,61 @@ const IDCardsModule = ({
                             )}
                         </div>
                     </div>
+
+                    {!isTeacher ? (
+                      <div className="flex flex-col items-center text-center mt-1 w-full gap-0.5">
+                        <div className="flex flex-col">
+                          <span className="font-extrabold text-[#0047AB] uppercase tracking-wider text-[6px]">Class-Section</span>
+                          <span className="font-bold text-slate-800 uppercase text-[8.5px] mt-0.5">
+                            {person.class || 'N/A'} - {person.section || 'N/A'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col mt-0.5">
+                          <span className="font-extrabold text-[#0047AB] uppercase tracking-wider text-[6px]">Roll Number</span>
+                          <span className="font-black text-rose-600 text-[9px] bg-rose-50 border border-rose-100 px-1 py-0.5 rounded mt-0.5 min-w-[32px]">
+                            {person.rollNumber || person.rollNo || 'N/A'}
+                          </span>
+                        </div>
+                        <div className="mt-1 bg-rose-50 border border-rose-100 text-rose-700 py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5">
+                          <Heart size={8} fill="currentColor" className="fill-rose-600 text-rose-600 shrink-0" />
+                          {person.bloodGroup || 'N/A'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center text-center mt-1 w-full gap-0.5">
+                        <div className="flex flex-col">
+                          <span className="font-extrabold text-red-600 uppercase tracking-wider text-[6px]">Designation</span>
+                          <span className="font-bold text-slate-800 uppercase text-[8.5px] mt-0.5 truncate max-w-[80px]">
+                            {person.designation || 'Teacher'}
+                          </span>
+                        </div>
+                        <div className="flex flex-col mt-0.5">
+                          <span className="font-extrabold text-red-600 uppercase tracking-wider text-[6px]">Staff ID</span>
+                          <span className="font-black text-slate-700 text-[8.5px] bg-slate-50 border border-slate-100 px-1 py-0.5 rounded mt-0.5">
+                            {person.staffId || person.id || 'N/A'}
+                          </span>
+                        </div>
+                        <div className="mt-1 bg-rose-50 border border-rose-100 text-rose-700 py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5">
+                          <Heart size={8} fill="currentColor" className="fill-rose-600 text-rose-600 shrink-0" />
+                          {person.bloodGroup || 'N/A'}
+                        </div>
+                      </div>
+                    )}
                 </div>
 
                 {/* Details Section - Clean & Structured */}
-                <div className="flex-1 min-w-0 flex flex-col">
-                    <div className="mb-3">
-                      <h3 className={`font-black ${themeText} text-[16px] uppercase tracking-tighter leading-tight`}>
+                <div className="flex-1 min-w-0 flex flex-col justify-start">
+                    <div className="mb-2">
+                      <h3 className={`font-black ${themeText} text-[15px] uppercase tracking-tighter leading-tight truncate`}>
                           {person.name} {person.surname || ''}
                       </h3>
-                      <div className={`h-1 w-12 ${themeColor} rounded-full mt-1`} />
+                      <div className={`h-0.5 w-10 ${themeColor} rounded-full mt-1`} />
                     </div>
                     
-                    <div className="space-y-1.5 flex-1">
-                        {labels.filter(l => l.label !== 'Address' && l.label !== 'Contact').map((item, idx) => (
-                            <div key={idx} className="flex flex-col text-[9px] leading-tight">
-                                <span className="font-black text-slate-400 uppercase tracking-widest text-[7px] mb-0.5">{item.label}</span>
+                    <div className="space-y-1.5 flex-1 mt-1">
+                        {rightDetails.map((item, idx) => (
+                            <div key={idx} className="flex flex-col text-[8.5px] leading-tight">
+                                <span className="font-extrabold text-slate-400 uppercase tracking-wider text-[6.5px] mb-0.5">{item.label}</span>
                                 <span className="font-black text-slate-800 uppercase truncate bg-slate-50 px-2 py-1 rounded-md border border-slate-100">{item.value}</span>
                             </div>
                         ))}
@@ -22098,18 +22099,8 @@ const IDCardsModule = ({
                 </div>
             </div>
 
-            {/* Contact & Address - Compact Bottom Grid */}
-            <div className="grid grid-cols-1 gap-2 mb-4">
-              {labels.filter(l => l.label === 'Contact' || l.label === 'Address').map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-[8.5px] bg-slate-50 p-2 rounded-xl border border-slate-100">
-                  <span className="font-black text-slate-400 uppercase tracking-tighter w-12 shrink-0">{item.label}</span>
-                  <span className="font-bold text-slate-700 truncate">{item.value}</span>
-                </div>
-              ))}
-            </div>
-
             {/* Principal Signature & Branding */}
-            <div className="mt-auto pt-3 flex justify-between items-center border-t border-slate-100">
+            <div className="mt-auto pt-2 flex justify-between items-center border-t border-slate-100">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-slate-50 rounded-lg p-1.5 border border-slate-100">
                      <img src={schoolProfile?.logo} alt="" className="w-full h-full object-contain grayscale opacity-50" />
