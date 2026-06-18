@@ -17,7 +17,7 @@ let connectionState = {
   qrCode: "",
   phoneNumber: "",
   lastSync: new Date().toISOString(),
-  mode: "Simulator", // "Simulator" | "Real"
+  mode: "Real", // "Simulator" | "Real"
   error: null as string | null
 };
 
@@ -37,7 +37,7 @@ let whatsappClient: any = null;
  * 7. If the session has been invalidated (e.g. logged out from mobile phone), "auth_failure" is triggered,
  *    updating state to "Session Expired" and prompting a renewed QR scan.
  */
-async function initRealWhatsApp(forceReal: boolean = false) {
+async function initRealWhatsApp(forceReal: boolean = true) {
   if (!forceReal && process.env.WHATSAPP_REAL_MODE !== "true") {
     console.log("[WhatsApp] Running in Sandbox/Simulator Mode specified by WHATSAPP_REAL_MODE.");
     return false;
