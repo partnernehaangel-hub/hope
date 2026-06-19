@@ -15924,9 +15924,7 @@ const schoolMigrations = `
   const [studentFilterSection, setStudentFilterSection] = useState<string>('');
   const [studentFilterType, setStudentFilterType] = useState<string>('');
   const [studentFilterSession, setStudentFilterSession] = useState<string>('');
-  const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
-  const [selectedStudentQR, setSelectedStudentQR] = useState<any>(null);
-  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+
   const [schoolProfile, setSchoolProfile] = useState<any>({
     name: 'Hope English School',
     contact: '+91 9436122607',
@@ -15954,6 +15952,16 @@ const schoolMigrations = `
       { id: '4', name: 'Library', url: 'https://picsum.photos/seed/library/640/480' }
     ]
   });
+
+  useEffect(() => {
+    if (schoolProfile?.currentSession) {
+      setStudentFilterSession(schoolProfile.currentSession);
+    }
+  }, [schoolProfile?.currentSession]);
+
+  const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
+  const [selectedStudentQR, setSelectedStudentQR] = useState<any>(null);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
 
   const [bulkStudentInput, setBulkStudentInput] = useState('');
   const [bulkImportMode, setBulkImportMode] = useState<'auto' | 'excel' | 'double' | 'json'>('auto');
@@ -18246,6 +18254,63 @@ const schoolMigrations = `
           </div>
 
           <div className="flex items-center gap-2 md:gap-4 relative">
+            {/* Global Academic Session Selector */}
+            {schoolProfile?.sessions && schoolProfile.sessions.length > 0 && (
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1 mr-1 shadow-2xs hover:border-slate-300 transition-all">
+                <Calendar className="text-primary" size={13} />
+                <div className="flex flex-col text-left">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-0.5">Academic Session</span>
+                  <select 
+                    className="bg-transparent border-none text-xs font-black text-slate-700 focus:outline-none focus:ring-0 p-0 pr-4 uppercase cursor-pointer leading-tight"
+                    value={schoolProfile?.currentSession || '2025-26'}
+                    onChange={async (e) => {
+                      const newSession = e.target.value;
+                      const updatedProfile = { ...schoolProfile, currentSession: newSession };
+                      setSchoolProfile(updatedProfile);
+                      setStudentFilterSession(newSession); // keep student filter in sync
+                      
+                      // Auto-sync persistent setting to Database if authorized
+                      if (supabase && (currentUser?.role === 'admin' || currentUser?.role === 'super-admin')) {
+                        try {
+                          const payload = {
+                            school_name: schoolProfile.name,
+                            contact_number: schoolProfile.contact,
+                            school_email: schoolProfile.email,
+                            gst_number: schoolProfile.gst,
+                            registration_number: schoolProfile.regNo,
+                            school_address: schoolProfile.address,
+                            school_logo_url: schoolProfile.logo,
+                            principal_signature_url: schoolProfile.principalSignature,
+                            class_teacher_signature_url: schoolProfile.classTeacherSignature,
+                            official_stamp_url: schoolProfile.schoolStamp,
+                            warden_id: schoolProfile.wardenPanelId,
+                            warden_password: schoolProfile.wardenPanelPassword,
+                            accountant_id: schoolProfile.accountantPanelId,
+                            accountant_password: schoolProfile.accountantPanelPassword,
+                            fee_qr_url: schoolProfile.feeQrUrl,
+                            fee_upi_id: schoolProfile.feeUpiId,
+                            tax_percentage: taxes,
+                            current_academic_session: newSession
+                          };
+                          await supabase
+                            .from('school_profile')
+                            .upsert([{ id: '00000000-0000-0000-0000-000000000001', ...payload }], { onConflict: 'id' });
+                        } catch (err) {
+                          console.error('Error auto-saving session configuration:', err);
+                        }
+                      }
+                    }}
+                  >
+                    {schoolProfile.sessions.map((sessionOpt: string) => (
+                      <option key={sessionOpt} value={sessionOpt} className="font-bold text-xs bg-white text-slate-800">
+                        {sessionOpt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
             <div className="hidden sm:flex items-center gap-2 mr-2">
               {dbStatus === 'loading' && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-500 rounded-xl text-[10px] font-bold uppercase tracking-wider animate-pulse border border-slate-200">

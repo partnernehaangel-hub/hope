@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -51,6 +51,7 @@ interface FeeManagementProps {
   showModal: (title: string, message: string) => void;
   getStudentDueFees: (student: any) => number;
   setShowReceipt?: (transaction: FeeTransaction) => void;
+  schoolProfile?: any;
 }
 
 export const FeeManagement = ({ 
@@ -72,7 +73,8 @@ export const FeeManagement = ({
   masterData, 
   showModal,
   getStudentDueFees,
-  setShowReceipt
+  setShowReceipt,
+  schoolProfile
 }: FeeManagementProps) => {
   const [activeTab, setActiveTab] = useState<'collect' | 'master' | 'reports' | 'ledger' | 'bank' | 'adjustments'>('collect');
   const [selectedClass, setSelectedClass] = useState('');
@@ -81,8 +83,16 @@ export const FeeManagement = ({
   const [showCollectModal, setShowCollectModal] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedLedgerStudent, setSelectedLedgerStudent] = useState<Student | null>(null);
-  const [selectedLedgerSession, setSelectedLedgerSession] = useState('2024-25');
-  const [setupSession, setSetupSession] = useState('2024-25');
+  const [selectedLedgerSession, setSelectedLedgerSession] = useState(schoolProfile?.currentSession || '2024-25');
+  const [setupSession, setSetupSession] = useState(schoolProfile?.currentSession || '2024-25');
+
+  useEffect(() => {
+    if (schoolProfile?.currentSession) {
+      setSelectedLedgerSession(schoolProfile.currentSession);
+      setSetupSession(schoolProfile.currentSession);
+    }
+  }, [schoolProfile?.currentSession]);
+
   const [formData, setFormData] = useState<any>({
     class: '',
     feeType: '',
@@ -233,7 +243,7 @@ export const FeeManagement = ({
       invoiceNumber: `INV-${Date.now().toString().slice(-6)}`,
       status: 'Paid',
       remarks: paymentData.remarks,
-      session: selectedStudent.session || '2024-25'
+      session: selectedStudent.session || schoolProfile?.currentSession || '2024-25'
     };
     
     setFeeTransactions([newTransaction, ...feeTransactions]);
@@ -1105,7 +1115,7 @@ export const FeeManagement = ({
                 options={feeMaster
                   .filter(m => 
                     m.class === selectedStudent.class && 
-                    m.session === (selectedStudent.session || '2024-25') &&
+                    m.session === (selectedStudent.session || schoolProfile?.currentSession || '2024-25') &&
                     (m.studentType === 'Both' || m.studentType === selectedStudent.studentType)
                   )
                   .filter(m => {

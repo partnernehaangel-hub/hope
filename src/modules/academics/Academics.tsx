@@ -40,6 +40,7 @@ interface AcademicsProps {
   setTeacherAssignments: (assignments: ClassAssignment[]) => void;
   masterData: any;
   currentUser: any;
+  schoolProfile?: any;
 }
 
 export const Academics = ({ 
@@ -54,7 +55,8 @@ export const Academics = ({
   teacherAssignments, 
   setTeacherAssignments, 
   masterData, 
-  currentUser 
+  currentUser,
+  schoolProfile
 }: AcademicsProps) => {
   const [activeTab, setActiveTab] = useState<'timetable' | 'assignments' | 'promotion' | 'syllabus' | 'homework' | 'planner'>('timetable');
   
@@ -114,8 +116,14 @@ export const Academics = ({
     classTeacher: '',
     subject: '',
     teacher: '',
-    session: '2024-25'
+    session: schoolProfile?.currentSession || '2024-25'
   });
+
+  useEffect(() => {
+    if (schoolProfile?.currentSession) {
+      setAssignForm(prev => ({ ...prev, session: schoolProfile.currentSession }));
+    }
+  }, [schoolProfile?.currentSession]);
 
   // Syllabus Form
   const [syllabusForm, setSyllabusForm] = useState({
