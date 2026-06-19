@@ -32,6 +32,41 @@ interface HumanResourcePanelProps {
   setLeaveRequests: (leaveRequests: any[]) => void;
 }
 
+const formatDateDMY = (dateStr: any): string => {
+  if (!dateStr) return 'N/A';
+  const str = String(dateStr).trim();
+  if (!str || str === 'N/A' || str === '--') return 'N/A';
+  
+  const partsDash = str.split('-');
+  if (partsDash.length === 3) {
+    if (partsDash[0].length === 4) {
+      return `${partsDash[2]}/${partsDash[1]}/${partsDash[0]}`;
+    } else if (partsDash[2].length === 4) {
+      return `${partsDash[0]}/${partsDash[1]}/${partsDash[2]}`;
+    }
+  }
+
+  const partsSlash = str.split('/');
+  if (partsSlash.length === 3) {
+    if (partsSlash[0].length === 4) {
+      return `${partsSlash[2]}/${partsSlash[1]}/${partsSlash[0]}`;
+    }
+    return str;
+  }
+
+  try {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+  } catch (e) {}
+
+  return str;
+};
+
 export const HumanResourcePanel = ({ 
   staff, 
   setStaff, 
@@ -637,7 +672,7 @@ export const HumanResourcePanel = ({
                       </div>
                       <div>
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-wider mb-1">Date of Birth</p>
-                        <p className="text-sm font-bold text-text-heading">{viewStaff.dob || 'N/A'}</p>
+                        <p className="text-sm font-bold text-text-heading">{formatDateDMY(viewStaff.dob)}</p>
                       </div>
                       <div>
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-wider mb-1">Gender</p>

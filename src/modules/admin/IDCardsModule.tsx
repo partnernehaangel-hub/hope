@@ -39,6 +39,41 @@ import { Input } from '../../components/common/Input';
 import { Select } from '../../components/common/Select';
 import { Student } from '../../types';
 
+const formatDateDMY = (dateStr: any): string => {
+  if (!dateStr) return 'N/A';
+  const str = String(dateStr).trim();
+  if (!str || str === 'N/A' || str === '--') return 'N/A';
+  
+  const partsDash = str.split('-');
+  if (partsDash.length === 3) {
+    if (partsDash[0].length === 4) {
+      return `${partsDash[2]}/${partsDash[1]}/${partsDash[0]}`;
+    } else if (partsDash[2].length === 4) {
+      return `${partsDash[0]}/${partsDash[1]}/${partsDash[2]}`;
+    }
+  }
+
+  const partsSlash = str.split('/');
+  if (partsSlash.length === 3) {
+    if (partsSlash[0].length === 4) {
+      return `${partsSlash[2]}/${partsSlash[1]}/${partsSlash[0]}`;
+    }
+    return str;
+  }
+
+  try {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+  } catch (e) {}
+
+  return str;
+};
+
 interface IDCardsModuleProps {
   students: Student[];
 }
@@ -149,7 +184,7 @@ export const IDCardsModule = ({ students }: IDCardsModuleProps) => {
                   </div>
                   <div>
                     <p className="text-[8px] text-slate-500 uppercase tracking-widest mb-0.5">D.O.B.</p>
-                    <p>{s.dob || '01/01/2015'}</p>
+                    <p>{formatDateDMY(s.dob)}</p>
                   </div>
                 </div>
 

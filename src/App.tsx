@@ -152,6 +152,41 @@ const safeStr = (val: any): string => {
   return String(val);
 };
 
+const formatDateDMY = (dateStr: any): string => {
+  if (!dateStr) return 'N/A';
+  const str = String(dateStr).trim();
+  if (!str || str === 'N/A' || str === '--') return 'N/A';
+  
+  const partsDash = str.split('-');
+  if (partsDash.length === 3) {
+    if (partsDash[0].length === 4) {
+      return `${partsDash[2]}/${partsDash[1]}/${partsDash[0]}`;
+    } else if (partsDash[2].length === 4) {
+      return `${partsDash[0]}/${partsDash[1]}/${partsDash[2]}`;
+    }
+  }
+
+  const partsSlash = str.split('/');
+  if (partsSlash.length === 3) {
+    if (partsSlash[0].length === 4) {
+      return `${partsSlash[2]}/${partsSlash[1]}/${partsSlash[0]}`;
+    }
+    return str;
+  }
+
+  try {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+  } catch (e) {}
+
+  return str;
+};
+
 const parseBulkStudents = (input: string, mode: 'auto' | 'excel' | 'double' | 'json', currentSession: string): any[] => {
   if (!input || !input.trim()) return [];
 
@@ -12801,7 +12836,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                         </div>
                         <div>
                           <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Date of Birth</p>
-                          <p className="text-sm font-bold text-text-heading">{viewStaff.dob}</p>
+                          <p className="text-sm font-bold text-text-heading">{formatDateDMY(viewStaff.dob)}</p>
                         </div>
                         <div className="col-span-2">
                           <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Address</p>
@@ -15763,6 +15798,12 @@ const schoolMigrations = `
   }, [supabase]);
 
   const [view, setView] = useState<View>('login');
+  const [attendancePortalUser, setAttendancePortalUser] = useState<any>(null);
+  const [attendancePortalId, setAttendancePortalId] = useState('');
+  const [attendancePortalPassword, setAttendancePortalPassword] = useState('');
+  const [attendanceError, setAttendanceError] = useState('');
+  const [showAttendancePassword, setShowAttendancePassword] = useState(false);
+  const [isLoggingInAttendance, setIsLoggingInAttendance] = useState(false);
   const [showBulkStudentModal, setShowBulkStudentModal] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -17032,6 +17073,109 @@ const schoolMigrations = `
     }
   };
 
+  const handleAttendancePortalLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingInAttendance(true);
+    setAttendanceError('');
+
+    const id = attendancePortalId.trim();
+    const pw = attendancePortalPassword;
+
+    if (!id || !pw) {
+      setAttendanceError('Please fill in all fields.');
+      setIsLoggingInAttendance(false);
+      return;
+    }
+
+    // 1. Check Super Admin
+    if (id === 'DC0018' && pw === 'Durgamaa@18') {
+      const superAdmin = users.find(u => u.id === 'DC0018') || { id: 'DC0018', name: 'Super Admin', role: 'super-admin' };
+      setAttendancePortalUser(superAdmin);
+      setIsLoggingInAttendance(false);
+      return;
+    }
+
+    // 2. Check Admin
+    if (id === 'admin') {
+      const adminUser = users.find(u => u.id === 'admin');
+      const requiredPassword = adminUser?.password || 'smcs@josdhoa@12345';
+      if (pw === requiredPassword) {
+        setAttendancePortalUser(adminUser || { id: 'admin', name: 'Administrator', role: 'admin' });
+        setIsLoggingInAttendance(false);
+        return;
+      }
+    }
+
+    // 3. Fallback/Convenient default kiosk account
+    if (id.toLowerCase() === 'attendance' && pw === 'attendance123') {
+      setAttendancePortalUser({ id: 'attendance_kiosk', name: 'Attendance Kiosk', role: 'staff' });
+      setIsLoggingInAttendance(false);
+      return;
+    }
+
+    // 4. Try to authenticate via Supabase
+    if (supabase) {
+      try {
+        const { data: dbUser, error: dbError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('username', id)
+          .single();
+
+        if (dbUser && pw === dbUser.password) {
+          // Verify role is authorized for attendance (admin, super-admin, teacher, staff, warden)
+          const authorizedRoles = ['admin', 'super-admin', 'teacher', 'staff', 'warden'];
+          if (authorizedRoles.includes(dbUser.role)) {
+            let enriched = {
+              ...dbUser,
+              id: dbUser.username,
+              name: dbUser.name || (dbUser.username.charAt(0).toUpperCase() + dbUser.username.slice(1))
+            };
+
+            // Get name/surname from staff details if available
+            const { data: staffData } = await supabase
+              .from('staff')
+              .select('staff_id, name, surname')
+              .eq('staff_id', dbUser.username)
+              .single();
+
+            if (staffData) {
+              enriched.name = `${staffData.name} ${staffData.surname}`;
+            }
+
+            setAttendancePortalUser(enriched);
+            setIsLoggingInAttendance(false);
+            return;
+          } else {
+            setAttendanceError('Access Denied: Only staff or teachers can login to the Attendance Portal.');
+            setIsLoggingInAttendance(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Attendance login database error:", err);
+      }
+    }
+
+    // 5. Look up in local user accounts (fallback)
+    const localUser = users.find(u => u.id === id || u.studentId === id);
+    if (localUser && localUser.password === pw) {
+      const authorizedRoles = ['admin', 'super-admin', 'teacher', 'staff', 'warden'];
+      if (authorizedRoles.includes(localUser.role)) {
+        setAttendancePortalUser(localUser);
+        setIsLoggingInAttendance(false);
+        return;
+      } else {
+        setAttendanceError('Access Denied: Only staff or teachers can login to the Attendance Portal.');
+        setIsLoggingInAttendance(false);
+        return;
+      }
+    }
+
+    setAttendanceError('Invalid User ID or Password.');
+    setIsLoggingInAttendance(false);
+  };
+
   const generateStudentId = () => {
     return 'DS-' + Math.floor(100000 + Math.random() * 900000);
   };
@@ -17110,8 +17254,8 @@ const schoolMigrations = `
     }
 
     // Validation
-    if (!formData.name || !formData.surname || !formData.class || !formData.section) {
-      showModal('Validation Error', 'Please fill in all required fields: Name, Surname, Class, and Section.');
+    if (!formData.name || !formData.class || !formData.section) {
+      showModal('Validation Error', 'Please fill in all required fields: Name, Class, and Section.');
       return;
     }
 
@@ -17553,26 +17697,153 @@ const schoolMigrations = `
   }
 
   if (view === 'attendance-public') {
-    return (
-      <div className="min-h-screen bg-slate-100 flex flex-col justify-between p-4 md:p-8 font-display">
-        {/* Header Block with Back Button */}
-        <div className="max-w-7xl mx-auto w-full bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 shadow-sm">
-          <div className="flex items-center gap-4">
+    if (!attendancePortalUser) {
+      return (
+        <div className="min-h-screen bg-linear-to-b from-indigo-50 via-slate-50 to-indigo-50/50 flex flex-col justify-between p-4 md:p-8 font-sans">
+          {/* Header */}
+          <div className="max-w-xl mx-auto w-full flex justify-between items-center py-4">
             <button 
-              onClick={() => setView('login')}
-              className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all active:scale-95 px-4 py-2 rounded-xl font-bold text-xs uppercase"
+              onClick={() => {
+                setAttendancePortalId('');
+                setAttendancePortalPassword('');
+                setAttendanceError('');
+                setView('login');
+              }}
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-800 transition-all active:scale-95 px-4 py-2.5 rounded-xl font-bold text-xs uppercase border border-slate-200/80 shadow-xs cursor-pointer"
             >
-              ← Back to Login
+              ← Back to ERP Login
             </button>
-            <div>
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Kiosk Mode</h2>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{schoolProfile?.name || 'Digital Access'}</p>
+          </div>
+
+          {/* Login Card */}
+          <div className="max-w-md mx-auto w-full bg-white border border-slate-200/80 rounded-3xl p-8 sm:p-10 shadow-xl shadow-slate-100 relative overflow-hidden transition-all duration-300">
+            {/* Top decorative gradient bar */}
+            <div className="absolute top-0 inset-x-0 h-2 bg-linear-to-r from-emerald-500 via-indigo-500 to-blue-500"></div>
+
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-linear-to-br from-indigo-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white mx-auto mb-4 shadow-md shadow-indigo-200">
+                <CheckCircle2 size={32} strokeWidth={2.5} />
+              </div>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">ATTENDANCE PORTAL</h2>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Authorized Access Only</p>
+            </div>
+
+            <form onSubmit={handleAttendancePortalLogin} className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">User ID / Username</label>
+                <div className="relative group">
+                  <User size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+                  <input 
+                    type="text" 
+                    className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all bg-white placeholder:text-slate-400 text-sm font-medium" 
+                    placeholder="Enter Employee ID or 'attendance'"
+                    value={attendancePortalId}
+                    onChange={(e) => setAttendancePortalId(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Password</label>
+                <div className="relative group">
+                  <Lock size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+                  <input 
+                    type={showAttendancePassword ? "text" : "password"} 
+                    className="w-full pl-12 pr-12 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all bg-white placeholder:text-slate-400 text-sm font-medium" 
+                    placeholder="••••••••"
+                    value={attendancePortalPassword}
+                    onChange={(e) => setAttendancePortalPassword(e.target.value)}
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowAttendancePassword(!showAttendancePassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition-colors"
+                  >
+                    {showAttendancePassword ? <Eye size={20} /> : <EyeOff size={20} />}
+                  </button>
+                </div>
+              </div>
+
+              {attendanceError && (
+                <div className="p-4 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-100 flex items-center gap-2">
+                  <AlertCircle size={16} />
+                  {attendanceError}
+                </div>
+              )}
+
+              <button 
+                type="submit"
+                disabled={isLoggingInAttendance}
+                className="w-full bg-linear-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white py-4 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-indigo-600/10 active:scale-[0.98] transition-all cursor-pointer flex justify-center items-center gap-2"
+              >
+                {isLoggingInAttendance ? (
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                  <>
+                    <ShieldCheck size={14} />
+                    Verify & Access
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block bg-slate-50 border border-slate-100 p-3 rounded-2xl leading-relaxed">
+                💡 Standard Administrator, Staff, or Teacher credentials can be used. <br/>
+                For kiosk mode, use account <strong className="text-indigo-600 font-extrabold">attendance</strong> with password <strong className="text-indigo-600 font-extrabold">attendance123</strong>.
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl">
-            <span className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></span>
-            <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Public Attendance Panel</span>
+          {/* Footer */}
+          <div className="text-center py-6 text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+            a Product of <span className="text-primary font-black">digital access</span> powered by <span className="text-primary font-black">JOSHODA</span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col justify-between p-4 md:p-8 font-display">
+        {/* Header Block with Logout Panel options */}
+        <div className="max-w-7xl mx-auto w-full bg-white border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 shadow-sm">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => {
+                setAttendancePortalUser(null);
+                setAttendancePortalId('');
+                setAttendancePortalPassword('');
+                setView('login');
+              }}
+              className="flex items-center gap-2 bg-slate-100 hover:bg-red-50 hover:text-red-600 text-slate-800 transition-all active:scale-95 px-4 py-2.5 rounded-xl font-bold text-xs uppercase cursor-pointer border border-slate-200/50"
+            >
+              ← Logout Portal
+            </button>
+            <div>
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Kiosk Mode Active</h2>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                Authenticated Operator: <span className="text-indigo-600 font-black">{attendancePortalUser.name}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Authorized Session</span>
+            </div>
+
+            <button
+              onClick={() => {
+                setAttendancePortalUser(null);
+                setAttendancePortalId('');
+                setAttendancePortalPassword('');
+              }}
+              title="Lock Screen"
+              className="flex items-center justify-center p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer active:scale-95 border border-slate-200/50"
+            >
+              <Lock size={16} />
+            </button>
           </div>
         </div>
 
@@ -17583,7 +17854,7 @@ const schoolMigrations = `
             attendance={attendance} 
             setAttendance={setAttendance} 
             masterData={masterData} 
-            currentUser={{ name: 'Public Kiosk', role: 'staff' }} // Safe dummy user for public kiosk
+            currentUser={attendancePortalUser} 
             supabase={supabase}
             teacherAssignments={teacherAssignments}
             setSelectedStudentQR={setSelectedStudentQR}
@@ -18271,7 +18542,6 @@ const schoolMigrations = `
                       </div>
                       <Input 
                         label="Surname" 
-                        required 
                         value={formData.surname || ''}
                         onChange={(e: any) => setFormData({...formData, surname: e.target.value})} 
                       />
@@ -18336,14 +18606,12 @@ const schoolMigrations = `
                       <Select 
                         label="Gender" 
                         options={masterData.genders} 
-                        required 
                         value={formData.gender || ''}
                         onChange={(e: any) => setFormData({...formData, gender: e.target.value})} 
                       />
                       <Input 
                         label="Admission Date" 
                         type="date"
-                        required
                         value={formData.admissionDate || new Date().toISOString().split('T')[0]}
                         onChange={(e: any) => setFormData({...formData, admissionDate: e.target.value})} 
                       />
@@ -20365,7 +20633,7 @@ const schoolMigrations = `
                               </span>
                             </td>
                             <td className="py-2 px-3 font-mono font-bold text-slate-700">{student.rollNumber || '--'}</td>
-                            <td className="py-2 px-3 font-mono">{student.dob || '--'}</td>
+                            <td className="py-2 px-3 font-mono font-semibold">{formatDateDMY(student.dob)}</td>
                             <td className="py-2 px-3 text-slate-600 font-semibold">{student.fatherName || '--'}</td>
                             <td className="py-2 px-3 text-slate-600">{student.motherName || '--'}</td>
                             <td className="py-2 px-3 font-mono">{student.fatherMobile || '--'}</td>
@@ -21976,13 +22244,13 @@ const IDCardsModule = ({
 
     const rightDetails = isTeacher 
       ? [
-          { label: 'D.O.B', value: person.dob || 'N/A' },
+          { label: 'D.O.B', value: formatDateDMY(person.dob) },
           { label: 'Father/Spouse', value: person.fatherName || 'N/A' },
           { label: 'Contact No', value: person.mobile || person.phone || 'N/A' },
           { label: 'Address', value: person.address || 'N/A' },
         ]
       : [
-          { label: 'D.O.B', value: person.dob || person.birthDate || 'N/A' },
+          { label: 'D.O.B', value: formatDateDMY(person.dob || person.birthDate) },
           { label: 'Father\'s Name', value: person.fatherName || 'N/A' },
           { label: 'Mother\'s Name', value: person.motherName || 'N/A' },
           { label: 'Contact No', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
@@ -22595,7 +22863,7 @@ const IDCardsModule = ({
 
         <p>The school has no objection to his/her continuing his/her studies in any other recognized University/Board.</p>
         
-        <p>His/Her date of birth as per school records is <span className="font-black border-b-2 border-slate-300 px-4">{student.dob || '01/01/2010'}</span>.</p>
+        <p>His/Her date of birth as per school records is <span className="font-black border-b-2 border-slate-300 px-4">{formatDateDMY(student.dob)}</span>.</p>
 
         <div className="grid grid-cols-2 gap-12 mt-32">
           <div>
