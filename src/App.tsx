@@ -90,7 +90,8 @@ import {
   Send,
   Smartphone,
   Calculator,
-  Heart
+  Heart,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -15061,6 +15062,7 @@ export default function App() {
 
   // Supabase Data Fetching
   const [dbStatus, setDbStatus] = useState<'connected' | 'error' | 'loading'>('loading');
+  const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
 
   useEffect(() => {
     const runMigrations = async () => {
@@ -16017,6 +16019,7 @@ const schoolMigrations = `
   // Supabase Data Fetching
   async function fetchAllData() {
     if (!supabase) return;
+    try {
 
     // Fetch Users
     try {
@@ -16612,6 +16615,11 @@ const schoolMigrations = `
         type: ce.event_type,
         color: ce.color
       })));
+    } catch (err: any) {
+      console.error('Error in fetchAllData:', err);
+    } finally {
+      setIsInitialDataLoaded(true);
+    }
   }
 
   useEffect(() => {
@@ -17498,6 +17506,52 @@ const schoolMigrations = `
       showModal('Error', `Failed to save student details: ${err.message || 'Unknown error'}`);
     }
   };
+
+  if (!isInitialDataLoaded) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-900 font-sans relative overflow-hidden">
+        {/* Subtle grid background */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-30" />
+        
+        {/* Subtle ambient light source */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-sky-500/10 rounded-full blur-[120px]" />
+
+        <div className="relative text-center max-w-sm w-full mx-auto flex flex-col items-center z-10">
+          {/* Handcrafted animated loader track with pulse spinner */}
+          <div className="relative w-20 h-20 mb-8 flex items-center justify-center">
+            {/* Spinning tracking arc */}
+            <div className="absolute inset-0 rounded-full border-[3px] border-slate-800 border-t-sky-500 animate-spin" />
+            {/* Inner pulsing database logo/icon */}
+            <Database className="w-8 h-8 text-sky-400 animate-pulse" />
+          </div>
+
+          <h2 className="text-xl font-semibold text-slate-100 tracking-tight mb-2">
+            Verifying Database Sync
+          </h2>
+          
+          <p className="text-xs text-slate-400 font-mono mb-6 uppercase tracking-wider flex items-center justify-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+            Connecting to Host
+          </p>
+
+          <div className="w-full bg-slate-950/80 border border-slate-800/80 rounded-2xl p-4 text-left leading-relaxed shadow-2xl backdrop-blur-md">
+            <div className="flex items-center justify-between text-xs text-slate-400 font-mono mb-2">
+              <span>Synchronizing active roster...</span>
+              <span className="text-emerald-400">OK</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-400 font-mono mb-2">
+              <span>Mapping financial ledgers...</span>
+              <span className="text-emerald-400">OK</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-400 font-mono">
+              <span>Caching school profiles...</span>
+              <span className="text-sky-400 animate-pulse">Syncing</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (view === 'login') {
     return (
