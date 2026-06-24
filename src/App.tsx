@@ -91,12 +91,15 @@ import {
   Smartphone,
   Calculator,
   Heart,
-  Loader2
+  Loader2,
+  Check,
+  FolderDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import JSZip from 'jszip';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import QRCode from "react-qr-code";
 import { supabase } from './lib/supabase';
@@ -16019,7 +16022,10 @@ const schoolMigrations = `
 
   // Supabase Data Fetching
   async function fetchAllData() {
-    if (!supabase) return;
+    if (!supabase) {
+      setIsInitialDataLoaded(true);
+      return;
+    }
     try {
 
     // Fetch Users
@@ -22358,10 +22364,81 @@ const IDCardsModule = ({
     { id: 'migration', label: 'Migration Cert', icon: FileSpreadsheet },
   ];
 
-  const IDCard = ({ person, type = 'student', orientation = 'portrait' }: { person: any, type?: string, orientation?: 'portrait' | 'landscape' }) => {
+  const templateStyles: Record<string, {
+    name: string;
+    headerBg: string;
+    footerBg: string;
+    accentText: string;
+    accentBg: string;
+    badgeBg: string;
+    badgeText: string;
+    cardBorder: string;
+  }> = {
+    classic: {
+      name: 'Executive Blue',
+      headerBg: 'bg-gradient-to-tr from-[#003366] via-[#0047AB] to-blue-500',
+      footerBg: 'bg-[#003366]',
+      accentText: 'text-[#0047AB]',
+      accentBg: 'bg-[#0047AB]',
+      badgeBg: 'bg-blue-50 border-blue-100',
+      badgeText: 'text-[#0047AB]',
+      cardBorder: 'border-slate-300'
+    },
+    emerald: {
+      name: 'Modern Emerald',
+      headerBg: 'bg-gradient-to-tr from-[#064e3b] via-[#059669] to-emerald-400',
+      footerBg: 'bg-[#064e3b]',
+      accentText: 'text-[#059669]',
+      accentBg: 'bg-[#059669]',
+      badgeBg: 'bg-emerald-50 border-emerald-100',
+      badgeText: 'text-[#059669]',
+      cardBorder: 'border-emerald-300'
+    },
+    crimson: {
+      name: 'Crimson Tech',
+      headerBg: 'bg-gradient-to-tr from-[#7f1d1d] via-[#dc2626] to-red-400',
+      footerBg: 'bg-[#7f1d1d]',
+      accentText: 'text-[#dc2626]',
+      accentBg: 'bg-[#dc2626]',
+      badgeBg: 'bg-red-50 border-red-100',
+      badgeText: 'text-[#dc2626]',
+      cardBorder: 'border-red-300'
+    },
+    onyx: {
+      name: 'Sleek Onyx',
+      headerBg: 'bg-gradient-to-tr from-slate-950 via-slate-800 to-slate-700',
+      footerBg: 'bg-slate-950',
+      accentText: 'text-slate-800',
+      accentBg: 'bg-slate-800',
+      badgeBg: 'bg-slate-50 border-slate-200',
+      badgeText: 'text-slate-800',
+      cardBorder: 'border-slate-400'
+    },
+    amber: {
+      name: 'Warm Amber',
+      headerBg: 'bg-gradient-to-tr from-amber-800 via-amber-600 to-amber-400',
+      footerBg: 'bg-amber-800',
+      accentText: 'text-amber-700',
+      accentBg: 'bg-amber-700',
+      badgeBg: 'bg-amber-50 border-amber-100',
+      badgeText: 'text-amber-700',
+      cardBorder: 'border-amber-300'
+    }
+  };
+
+  const IDCard = ({ person, type = 'student', orientation = 'portrait', template = 'classic' }: { person: any, type?: string, orientation?: 'portrait' | 'landscape', template?: string }) => {
     const isTeacher = type === 'teacher';
-    const themeColor = isTeacher ? 'bg-red-600' : 'bg-[#0047AB]'; // Red for teacher, Deep Blue for students
-    const themeText = isTeacher ? 'text-red-600' : 'text-[#0047AB]';
+    const currentStyle = templateStyles[template] || templateStyles.classic;
+    
+    // Use template properties
+    const themeColor = currentStyle.accentBg;
+    const themeText = currentStyle.accentText;
+    const headerBgClass = currentStyle.headerBg;
+    const footerBgClass = currentStyle.footerBg;
+    const badgeBgClass = currentStyle.badgeBg;
+    const badgeTextClass = currentStyle.badgeText;
+    const cardBorderClass = currentStyle.cardBorder;
+
     const schoolName = schoolProfile?.name || 'SUBRAI MISSION CONVENT SCHOOL';
     const schoolContact = schoolProfile?.contact || '';
     
@@ -22383,9 +22460,9 @@ const IDCardsModule = ({
         ];
 
     return (
-      <div className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl overflow-hidden flex flex-col relative font-sans border border-slate-300 mx-auto rounded-2xl`}>
+      <div className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl overflow-hidden flex flex-col relative font-sans border ${cardBorderClass} mx-auto rounded-2xl`}>
         {/* Top 1/3 Colored Section - Exactly 1/3 height (470/3 approx 156) */}
-        <div className={`${themeColor} h-[156px] flex flex-col items-center justify-center relative p-4 text-center`}>
+        <div className={`${headerBgClass} h-[156px] flex flex-col items-center justify-center relative p-4 text-center`}>
             {/* Top Border Accent */}
             <div className="absolute top-0 left-0 w-full h-1 bg-black/10" />
             
@@ -22434,38 +22511,38 @@ const IDCardsModule = ({
                     {!isTeacher ? (
                       <div className="flex flex-col items-center text-center mt-1 w-full gap-0.5">
                         <div className="flex flex-col">
-                          <span className="font-extrabold text-[#0047AB] uppercase tracking-wider text-[6px]">Class-Section</span>
+                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Class-Section</span>
                           <span className="font-bold text-slate-800 uppercase text-[8.5px] mt-0.5">
                             {person.class || 'N/A'} - {person.section || 'N/A'}
                           </span>
                         </div>
                         <div className="flex flex-col mt-0.5">
-                          <span className="font-extrabold text-[#0047AB] uppercase tracking-wider text-[6px]">Roll Number</span>
-                          <span className="font-black text-rose-600 text-[9px] bg-rose-50 border border-rose-100 px-1 py-0.5 rounded mt-0.5 min-w-[32px]">
+                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Roll Number</span>
+                          <span className={`font-black ${themeText} text-[9px] ${badgeBgClass} border px-1 py-0.5 rounded mt-0.5 min-w-[32px]`}>
                             {person.rollNumber || person.rollNo || 'N/A'}
                           </span>
                         </div>
-                        <div className="mt-1 bg-rose-50 border border-rose-100 text-rose-700 py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5">
-                          <Heart size={8} fill="currentColor" className="fill-rose-600 text-rose-600 shrink-0" />
+                        <div className={`mt-1 ${badgeBgClass} border ${badgeTextClass} py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5`}>
+                          <Heart size={8} fill="currentColor" className="shrink-0" />
                           {person.bloodGroup || 'N/A'}
                         </div>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center text-center mt-1 w-full gap-0.5">
                         <div className="flex flex-col">
-                          <span className="font-extrabold text-red-600 uppercase tracking-wider text-[6px]">Designation</span>
+                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Designation</span>
                           <span className="font-bold text-slate-800 uppercase text-[8.5px] mt-0.5 truncate max-w-[80px]">
                             {person.designation || 'Teacher'}
                           </span>
                         </div>
                         <div className="flex flex-col mt-0.5">
-                          <span className="font-extrabold text-red-600 uppercase tracking-wider text-[6px]">Staff ID</span>
+                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Staff ID</span>
                           <span className="font-black text-slate-700 text-[8.5px] bg-slate-50 border border-slate-100 px-1 py-0.5 rounded mt-0.5">
                             {person.staffId || person.id || 'N/A'}
                           </span>
                         </div>
-                        <div className="mt-1 bg-rose-50 border border-rose-100 text-rose-700 py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5">
-                          <Heart size={8} fill="currentColor" className="fill-rose-600 text-rose-600 shrink-0" />
+                        <div className={`mt-1 ${badgeBgClass} border ${badgeTextClass} py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5`}>
+                          <Heart size={8} fill="currentColor" className="shrink-0" />
                           {person.bloodGroup || 'N/A'}
                         </div>
                       </div>
@@ -22518,7 +22595,7 @@ const IDCardsModule = ({
         </div>
 
         {/* Footer Bar - Clean session indicator */}
-        <div className={`${themeColor} h-10 flex items-center justify-center px-6 relative overflow-hidden`}>
+        <div className={`${footerBgClass} h-10 flex items-center justify-center px-6 relative overflow-hidden`}>
             {/* Glossy overlay effect */}
             <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0" />
             <p className="text-white font-black text-[9px] uppercase tracking-[0.2em] relative z-10">
@@ -23005,6 +23082,7 @@ const IDCardsModule = ({
   );
 
   const [bulkMode, setBulkMode] = useState(false);
+  const [idTemplate, setIdTemplate] = useState<string>('classic');
 
   const handlePrint = () => {
     window.print();
@@ -23025,9 +23103,9 @@ const IDCardsModule = ({
       const pdf = new jsPDF({
         orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
         unit: 'px',
-        format: orientation === 'portrait' ? [canvas.width, canvas.height] : [canvas.width, canvas.height]
+        format: orientation === 'portrait' ? [canvas.width / 2, canvas.height / 2] : [canvas.width / 2, canvas.height / 2]
       });
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
       pdf.save(`${activeTab}-${person.name}-${person.studentId || person.id}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -23035,12 +23113,117 @@ const IDCardsModule = ({
     }
   };
 
-  const handleBulkDownload = async () => {
-    alert('Bulk download started. This may take a moment...');
-    for (const p of filteredPeople) {
-      await handleDownloadPDF(p);
-      // Small delay to prevent browser from blocking multiple downloads
-      await new Promise(resolve => setTimeout(resolve, 500));
+  const handleBulkDownloadSinglePDF = async () => {
+    if (filteredPeople.length === 0) {
+      alert('No data available to download.');
+      return;
+    }
+
+    const confirmDownload = confirm(`Generate a single combined PDF with ${filteredPeople.length} cards?`);
+    if (!confirmDownload) return;
+
+    alert('Generating combined PDF. Please do not close this window...');
+
+    try {
+      const pdf = new jsPDF({
+        orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+        unit: 'px',
+        format: orientation === 'portrait' ? [325, 470] : [470, 325]
+      });
+
+      for (let i = 0; i < filteredPeople.length; i++) {
+        const person = filteredPeople[i];
+        const element = document.getElementById(`card-${person.id || person.studentId}`);
+        if (!element) {
+          console.warn(`Card element not found for ID: ${person.id || person.studentId}`);
+          continue;
+        }
+
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        pdf.addImage(imgData, 'PNG', 0, 0, orientation === 'portrait' ? 325 : 470, orientation === 'portrait' ? 470 : 325);
+      }
+
+      pdf.save(`Bulk_${activeTab}_ID_Cards_Combined.pdf`);
+      alert('Bulk combined PDF download completed successfully!');
+    } catch (err) {
+      console.error('Error during combined PDF generation:', err);
+      alert('An error occurred during combined PDF generation. Please try printing or download ZIP instead.');
+    }
+  };
+
+  const handleBulkDownloadZIP = async (format: 'pdf' | 'png') => {
+    if (filteredPeople.length === 0) {
+      alert('No data available to download.');
+      return;
+    }
+
+    const confirmDownload = confirm(`Generate and package ${filteredPeople.length} individual cards in a ZIP archive?`);
+    if (!confirmDownload) return;
+
+    alert(`Generating ${format.toUpperCase()} cards for ZIP package. This might take a moment...`);
+
+    try {
+      const zip = new JSZip();
+
+      for (const person of filteredPeople) {
+        const element = document.getElementById(`card-${person.id || person.studentId}`);
+        if (!element) {
+          console.warn(`Card element not found for ID: ${person.id || person.studentId}`);
+          continue;
+        }
+
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+
+        if (format === 'png') {
+          const imgData = canvas.toDataURL('image/png').split(',')[1];
+          const fileName = `${person.name}_${person.studentId || person.id}.png`;
+          zip.file(fileName, imgData, { base64: true });
+        } else {
+          const imgData = canvas.toDataURL('image/png');
+          const pdf = new jsPDF({
+            orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+            unit: 'px',
+            format: orientation === 'portrait' ? [325, 470] : [470, 325]
+          });
+          pdf.addImage(imgData, 'PNG', 0, 0, orientation === 'portrait' ? 325 : 470, orientation === 'portrait' ? 470 : 325);
+          
+          const pdfData = pdf.output('arraybuffer');
+          const fileName = `${person.name}_${person.studentId || person.id}.pdf`;
+          zip.file(fileName, pdfData);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      const zipContent = await zip.generateAsync({ type: 'blob' });
+      const downloadLink = document.createElement('a');
+      downloadLink.href = URL.createObjectURL(zipContent);
+      downloadLink.download = `Bulk_${activeTab}_ID_Cards_${format.toUpperCase()}.zip`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+
+      alert('Bulk ZIP archive downloaded successfully!');
+    } catch (err) {
+      console.error('Error during bulk ZIP generation:', err);
+      alert('An error occurred during ZIP generation.');
     }
   };
 
@@ -23154,6 +23337,40 @@ const IDCardsModule = ({
             </div>
           </Card>
 
+          {(activeTab === 'student' || activeTab === 'teacher') && (
+            <Card className="p-6">
+              <h3 className="font-bold text-text-heading mb-4 flex items-center gap-2">
+                <Sparkles size={18} className="text-primary" />
+                ID Card Template
+              </h3>
+              <div className="grid grid-cols-1 gap-2">
+                {Object.entries(templateStyles).map(([key, value]) => {
+                  const isSelected = idTemplate === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setIdTemplate(key)}
+                      className={`w-full text-left p-3 rounded-xl font-bold text-sm transition-all border flex items-center justify-between ${
+                        isSelected
+                          ? 'bg-primary/10 border-primary text-primary shadow-sm'
+                          : 'bg-slate-50 border-transparent text-text-sub hover:border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex gap-0.5">
+                          <div className={`w-3 h-6 rounded-l ${key === 'classic' ? 'bg-[#003366]' : key === 'emerald' ? 'bg-[#064e3b]' : key === 'crimson' ? 'bg-[#7f1d1d]' : key === 'onyx' ? 'bg-slate-950' : 'bg-amber-800'}`} />
+                          <div className={`w-3 h-6 rounded-r ${key === 'classic' ? 'bg-[#3b82f6]' : key === 'emerald' ? 'bg-[#059669]' : key === 'crimson' ? 'bg-[#dc2626]' : key === 'onyx' ? 'bg-slate-700' : 'bg-amber-500'}`} />
+                        </div>
+                        <span>{value.name}</span>
+                      </div>
+                      {isSelected && <Check size={16} className="text-primary shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
           <Card className="p-6">
             <h3 className="font-bold text-text-heading mb-4">Select {activeTab === 'teacher' || activeTab === 'experience' ? 'Staff' : 'Student'}</h3>
             <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
@@ -23181,18 +23398,41 @@ const IDCardsModule = ({
         <div className="lg:col-span-3">
           {bulkMode ? (
             <div className="space-y-8">
-              <div className="flex items-center justify-between bg-white p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-0 z-20 no-print">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-0 z-20 no-print">
                 <div>
                   <h3 className="font-black text-text-heading">Bulk Generation Mode</h3>
-                  <p className="text-xs text-text-sub">Generating {filteredPeople.length} {activeTab}s for Class {selectedClass}</p>
+                  <p className="text-xs text-text-sub font-bold text-text-sub">Generating {filteredPeople.length} {activeTab}s for Class {selectedClass}</p>
                 </div>
-                <div className="flex items-center gap-2 no-print">
-                  <button onClick={handleBulkDownload} className="btn-secondary flex items-center gap-2">
-                    <Download size={20} />
-                    Download All
+                <div className="flex items-center gap-2 no-print flex-wrap">
+                  <button 
+                    onClick={handleBulkDownloadSinglePDF} 
+                    className="flex items-center gap-2 bg-gradient-to-r from-primary to-[#0047AB] text-white px-4 py-2.5 rounded-xl font-bold hover:shadow-md transition-all text-xs"
+                    title="Generate a single combined PDF for all cards"
+                  >
+                    <FileDown size={16} />
+                    Combined PDF
                   </button>
-                  <button onClick={handlePrint} className="btn-primary flex items-center gap-2">
-                    <Printer size={20} />
+                  <button 
+                    onClick={() => handleBulkDownloadZIP('pdf')} 
+                    className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2.5 rounded-xl font-bold hover:bg-indigo-100 transition-all text-xs"
+                    title="Generate individual PDFs and package them in a ZIP file"
+                  >
+                    <FolderDown size={16} />
+                    ZIP (PDFs)
+                  </button>
+                  <button 
+                    onClick={() => handleBulkDownloadZIP('png')} 
+                    className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-bold hover:bg-emerald-100 transition-all text-xs"
+                    title="Generate individual images and package them in a ZIP file"
+                  >
+                    <Download size={16} />
+                    ZIP (Images)
+                  </button>
+                  <button 
+                    onClick={handlePrint} 
+                    className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-bold hover:bg-slate-50 transition-all text-xs"
+                  >
+                    <Printer size={16} />
                     Print All
                   </button>
                 </div>
@@ -23201,8 +23441,8 @@ const IDCardsModule = ({
                 {filteredPeople.map((p: any) => (
                   <div key={p.id} className="flex flex-col items-center">
                     <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl">
-                      {activeTab === 'student' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} orientation={orientation} /></div>}
-                      {activeTab === 'teacher' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} type="teacher" orientation={orientation} /></div>}
+                      {activeTab === 'student' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} orientation={orientation} template={idTemplate} /></div>}
+                      {activeTab === 'teacher' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} type="teacher" orientation={orientation} template={idTemplate} /></div>}
                       {activeTab === 'hostel' && <div id={`card-${p.id || p.studentId}`}><HostelCard student={p} /></div>}
                       {activeTab === 'transfer' && <div id={`card-${p.id || p.studentId}`}><TransferCertificate student={p} /></div>}
                       {activeTab === 'migration' && <div id={`card-${p.id || p.studentId}`}><MigrationCertificate student={p} /></div>}
@@ -23231,8 +23471,8 @@ const IDCardsModule = ({
                   className="flex flex-col items-center gap-8"
                 >
                   <div className="bg-white p-4 rounded-[32px] shadow-2xl" id={`card-${selectedPerson.id || selectedPerson.studentId}`}>
-                    {activeTab === 'student' && <IDCard person={selectedPerson} orientation={orientation} />}
-                    {activeTab === 'teacher' && <IDCard person={selectedPerson} type="teacher" orientation={orientation} />}
+                    {activeTab === 'student' && <IDCard person={selectedPerson} orientation={orientation} template={idTemplate} />}
+                    {activeTab === 'teacher' && <IDCard person={selectedPerson} type="teacher" orientation={orientation} template={idTemplate} />}
                     {activeTab === 'hostel' && <HostelCard student={selectedPerson} />}
                     {activeTab === 'transfer' && <TransferCertificate student={selectedPerson} />}
                     {activeTab === 'migration' && <MigrationCertificate student={selectedPerson} />}
