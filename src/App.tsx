@@ -15928,6 +15928,7 @@ const schoolMigrations = `
   const [studentFilterSession, setStudentFilterSession] = useState<string>('');
 
   const [schoolProfile, setSchoolProfile] = useState<any>({
+    id: '00000000-0000-0000-0000-000000000001',
     name: 'Hope English School',
     contact: '+91 9436122607',
     gst: 'TR/SCH/2024/001',
@@ -16140,11 +16141,16 @@ const schoolMigrations = `
       if (desigData) setDesignations(desigData);
 
       // Fetch School Profile
-      const { data: profile } = await supabase.from('school_profile').select('*').limit(1).single();
+      let { data: profile } = await supabase.from('school_profile').select('*').eq('id', '00000000-0000-0000-0000-000000000001').maybeSingle();
+      if (!profile) {
+        const { data: anyProfile } = await supabase.from('school_profile').select('*').limit(1).maybeSingle();
+        profile = anyProfile;
+      }
       if (profile) {
         let loadedName = profile.school_name || 'SUBRAI MISSION CONVENT SCHOOL';
         setSchoolProfile((prev: any) => ({
           ...prev,
+          id: profile.id,
           name: loadedName,
           contact: profile.contact_number || prev.contact,
           gst: profile.gst_number || prev.gst,
@@ -17222,7 +17228,7 @@ const schoolMigrations = `
 
       const { error } = await supabase
         .from('school_profile')
-        .upsert([{ id: '00000000-0000-0000-0000-000000000001', ...payload }], { onConflict: 'id' });
+        .upsert([{ id: schoolProfile.id || '00000000-0000-0000-0000-000000000001', ...payload }], { onConflict: 'id' });
 
       if (error) throw error;
 
