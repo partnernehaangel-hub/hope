@@ -5121,7 +5121,44 @@ const Academics = ({
                           </div>
                         </div>
                         <p className="text-sm text-text-secondary whitespace-pre-wrap">{s.description}</p>
-                        <button className="mt-4 flex items-center gap-2 text-primary text-sm font-bold hover:underline">
+                        <button 
+                          onClick={() => {
+                            if (s.file) {
+                              window.open(s.file, '_blank');
+                            } else {
+                              const doc = new jsPDF();
+                              doc.setFont("Helvetica", "bold");
+                              doc.setFontSize(22);
+                              doc.text(schoolProfile?.name || "Hope English School", 105, 25, { align: "center" });
+                              
+                              doc.setFontSize(14);
+                              doc.setFont("Helvetica", "normal");
+                              doc.text(schoolProfile?.address || "School Address", 105, 32, { align: "center" });
+                              doc.line(20, 38, 190, 38);
+                              
+                              doc.setFont("Helvetica", "bold");
+                              doc.setFontSize(18);
+                              doc.text("ACADEMIC SYLLABUS", 105, 48, { align: "center" });
+                              
+                              doc.setFontSize(12);
+                              doc.text(`Class: ${s.class}`, 20, 60);
+                              doc.text(`Subject: ${s.subject}`, 20, 68);
+                              doc.text(`Topic: ${s.title}`, 20, 76);
+                              
+                              doc.line(20, 82, 190, 82);
+                              
+                              doc.setFont("Helvetica", "bold");
+                              doc.text("Syllabus / Topic Details:", 20, 92);
+                              doc.setFont("Helvetica", "normal");
+                              
+                              const splitDescription = doc.splitTextToSize(s.description || "No description provided.", 170);
+                              doc.text(splitDescription, 20, 100);
+                              
+                              doc.save(`Syllabus_${s.class}_${s.subject}_${s.title.replace(/\s+/g, '_')}.pdf`);
+                            }
+                          }}
+                          className="mt-4 flex items-center gap-2 text-primary text-sm font-bold hover:underline"
+                        >
                           <Download size={16} /> Download PDF
                         </button>
                       </div>
@@ -9990,7 +10027,10 @@ const Admin360View = ({ students, masterData, feeTransactions, attendance, bankB
           <p className="text-text-sub font-medium">Comprehensive overview of school operations and performance.</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 bg-white border border-slate-200 px-6 py-3 rounded-xl font-bold hover:bg-slate-50 transition-all">
+          <button 
+            onClick={() => window.print()}
+            className="flex items-center gap-2 bg-white border border-slate-200 px-6 py-3 rounded-xl font-bold hover:bg-slate-50 transition-all"
+          >
             <Printer size={20} /> Print Report
           </button>
         </div>
@@ -23160,8 +23200,108 @@ const IDCardsModule = ({
   const [bulkMode, setBulkMode] = useState(false);
   const [idTemplate, setIdTemplate] = useState<string>('classic');
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (bulkMode) {
+      if (filteredPeople.length === 0) return;
+      try {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Bulk Print Documents</title>
+                <style>
+                  @page { margin: 0; size: auto; }
+                  body { margin: 0; padding: 0; background: white; }
+                  .page-container { 
+                    display: flex; 
+                    justify-content: center; 
+                    align-items: center; 
+                    min-height: 100vh; 
+                    page-break-after: always; 
+                  }
+                  img { max-width: 100%; max-height: 100vh; height: auto; display: block; }
+                </style>
+              </head>
+              <body>
+          `);
+
+          for (const person of filteredPeople) {
+            const element = document.getElementById(`card-${person.id || person.studentId}`);
+            if (element) {
+              const canvas = await html2canvas(element, {
+                scale: 3,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+              });
+              const imgData = canvas.toDataURL('image/png');
+              printWindow.document.write(`
+                <div class="page-container">
+                  <img src="${imgData}" referrerPolicy="no-referrer" / alt="" />
+                </div>
+              `);
+            }
+          }
+
+          printWindow.document.write(`
+                <script>
+                  window.onload = function() {
+                    window.print();
+                    window.close();
+                  };
+                </script>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+        } else {
+          window.print();
+        }
+      } catch (err) {
+        console.error('Error in bulk printing:', err);
+        window.print();
+      }
+    } else {
+      const person = selectedPerson;
+      if (!person) return;
+      const element = document.getElementById(`card-${person.id || person.studentId}`);
+      if (!element) return;
+
+      try {
+        const canvas = await html2canvas(element, {
+          scale: 3,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        const imgData = canvas.toDataURL('image/png');
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Print Document - ${person.name}</title>
+                <style>
+                  @page { margin: 0; size: auto; }
+                  body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
+                  img { max-width: 100%; max-height: 100vh; height: auto; display: block; }
+                </style>
+              </head>
+              <body>
+                <img src="${imgData}" onload="window.print(); window.close();" referrerPolicy="no-referrer" / alt="" />
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+        } else {
+          window.print();
+        }
+      } catch (err) {
+        console.error('Error printing certificate/card:', err);
+        window.print();
+      }
+    }
   };
 
   const handleDownloadPDF = async (person: any) => {
@@ -23176,13 +23316,14 @@ const IDCardsModule = ({
         backgroundColor: '#ffffff'
       });
       const imgData = canvas.toDataURL('image/png');
+      const isLandscape = canvas.width > canvas.height;
       const pdf = new jsPDF({
-        orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+        orientation: isLandscape ? 'landscape' : 'portrait',
         unit: 'px',
-        format: orientation === 'portrait' ? [canvas.width / 2, canvas.height / 2] : [canvas.width / 2, canvas.height / 2]
+        format: [canvas.width / 2, canvas.height / 2]
       });
       pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
-      pdf.save(`${activeTab}-${person.name}-${person.studentId || person.id}.pdf`);
+      pdf.save(`${activeTab}-${person.name || 'document'}-${person.studentId || person.id || 'id'}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Error generating PDF. Please try printing instead.');
@@ -23580,7 +23721,7 @@ const IDCardsModule = ({
 
                   <div className="flex gap-4 no-print">
                     <button 
-                      onClick={() => window.print()}
+                      onClick={handlePrint}
                       className="flex items-center gap-2 bg-primary text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-primary/20 hover:scale-105 transition-all"
                     >
                       <Printer size={20} />
