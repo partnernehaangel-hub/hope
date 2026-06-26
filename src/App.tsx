@@ -99,7 +99,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import JSZip from 'jszip';
+import * as JSZipModule from 'jszip';
+const JSZip = ((JSZipModule as any).default || JSZipModule) as any;
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import QRCode from "react-qr-code";
 import { supabase } from './lib/supabase';
@@ -2070,7 +2071,7 @@ const Dashboard = ({
                   {allBirthdays.length > 0 ? allBirthdays.map((person: any, i: number) => (
                     <div key={i} className="flex items-center gap-4 p-3 bg-white/20 rounded-2xl">
                       <div className="w-10 h-10 bg-white/30 rounded-full flex items-center justify-center font-black text-sm">
-                        {person.name[0]}{person.surname[0]}
+                        {person.name?.[0] || '?'}{person.surname?.[0] || ''}
                       </div>
                       <div>
                         <h4 className="text-sm font-black uppercase tracking-tighter">{person.name} {person.surname}</h4>
@@ -2307,7 +2308,7 @@ const Dashboard = ({
                 {allBirthdays.length > 0 ? allBirthdays.map((person: any, i: number) => (
                   <div key={i} className="flex items-center gap-4 p-3 bg-white/20 rounded-2xl">
                     <div className="w-10 h-10 bg-white/30 rounded-full flex items-center justify-center font-black text-sm">
-                      {person.name[0]}{person.surname[0]}
+                      {person.name?.[0] || '?'}{person.surname?.[0] || ''}
                     </div>
                     <div>
                       <h4 className="text-sm font-black uppercase tracking-tighter">{person.name} {person.surname}</h4>
@@ -2462,10 +2463,10 @@ const Dashboard = ({
               </h3>
               <div className="flex flex-col items-center gap-4">
                 <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center font-bold text-primary overflow-hidden">
-                  {studentData.photo ? (
+                  {studentData?.photo ? (
                     <img src={studentData.photo} alt={studentData.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <span className="text-3xl">{studentData.name[0]}</span>
+                    <span className="text-3xl">{studentData?.name?.[0] || '?'}</span>
                   )}
                 </div>
                 <div className="text-center">
@@ -3393,7 +3394,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                               <td className="p-4">
                                 <div className="flex items-center gap-3">
                                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${record ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-primary'}`}>
-                                    {s.name[0]}{s.surname[0]}
+                                    {s.name?.[0] || '?'}{s.surname?.[0] || ''}
                                   </div>
                                   <div>
                                     <p className="text-sm font-bold text-text-heading">{s.name} {s.surname}</p>
@@ -3559,7 +3560,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                               <td className="p-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-primary font-bold text-xs">
-                                    {s.name[0]}{s.surname[0]}
+                                    {s.name?.[0] || '?'}{s.surname?.[0] || ''}
                                   </div>
                                   <div>
                                     <p className="text-sm font-bold text-text-heading">{s.name} {s.surname}</p>
@@ -4780,7 +4781,7 @@ const Academics = ({
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">
-                                  {s.name[0]}
+                                  {s.name?.[0] || '?'}
                                 </div>
                                 <div>
                                   <div className="font-bold text-slate-900">{s.name} {s.surname}</div>
@@ -4893,17 +4894,17 @@ const Academics = ({
                         {students
                           .filter((s: any) => s.class === rollClass && s.section === rollSection)
                           .filter((s: any) => 
-                            s.name.toLowerCase().includes(rollSearch.toLowerCase()) || 
-                            s.surname.toLowerCase().includes(rollSearch.toLowerCase()) ||
-                            s.studentId.toLowerCase().includes(rollSearch.toLowerCase())
+                            (s.name || '').toLowerCase().includes(rollSearch.toLowerCase()) || 
+                            (s.surname || '').toLowerCase().includes(rollSearch.toLowerCase()) ||
+                            (s.studentId || '').toLowerCase().includes(rollSearch.toLowerCase())
                           )
-                          .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                          .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
                           .map((s: any) => (
                             <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-3">
                                   <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold">
-                                    {s.name[0]}
+                                    {s.name?.[0] || '?'}
                                   </div>
                                   <div className="font-bold text-slate-900">{s.name} {s.surname}</div>
                                 </div>
@@ -8557,10 +8558,10 @@ const TeacherPanel = ({
           <Card className="lg:col-span-1">
             <div className="flex flex-col items-center text-center p-6">
               <div className="w-32 h-32 rounded-2xl bg-primary/10 flex items-center justify-center font-bold text-primary overflow-hidden mb-6">
-                {currentUser.photo ? (
+                {currentUser?.photo ? (
                   <img src={currentUser.photo} alt={currentUser.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
-                  <span className="text-4xl">{currentUser.name[0]}</span>
+                  <span className="text-4xl">{currentUser?.name?.[0] || '?'}</span>
                 )}
               </div>
               <h2 className="text-2xl font-black text-text-heading">{currentUser.name}</h2>
@@ -8716,7 +8717,7 @@ const TeacherPanel = ({
                     className={`w-full p-4 rounded-xl flex items-center gap-3 transition-all ${messageForm.recipientId === s.studentId ? 'bg-primary text-white' : 'hover:bg-slate-50 border border-transparent hover:border-slate-100'}`}
                   >
                     <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs overflow-hidden">
-                      {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : s.name[0]}
+                      {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : (s.name?.[0] || '?')}
                     </div>
                     <div className="text-left">
                       <p className="font-bold text-sm">Parent of {s.name}</p>
@@ -9082,7 +9083,7 @@ const TeacherPanel = ({
                         <td className="py-4">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-[10px]">
-                              {s.name[0]}
+                              {s.name?.[0] || '?'}
                             </div>
                             <span className="font-bold text-sm">{s.name} {s.surname}</span>
                           </div>
@@ -9863,7 +9864,7 @@ const DueFeesModule = ({ students, feeMaster, feeTransactions, currentUser, getS
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-primary">
-                        {s.name[0]}
+                        {s.name?.[0] || '?'}
                       </div>
                       <div>
                         <p className="font-bold">{s.name} {s.surname}</p>
@@ -10439,7 +10440,7 @@ const Class360View = ({ students, masterData, attendance, feeTransactions, getSt
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-primary">
-                        {s.name[0]}
+                        {s.name?.[0] || '?'}
                       </div>
                       <div>
                         <p className="font-bold">{s.name} {s.surname}</p>
@@ -11871,7 +11872,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                     <td className="py-4 px-4">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs overflow-hidden">
-                          {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : s.name[0]}
+                          {s.photo ? <img src={s.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : (s.name?.[0] || '?')}
                         </div>
                         <span className="font-bold text-text-heading">{s.name} {s.surname}</span>
                       </div>
@@ -12763,7 +12764,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                       <div className="w-32 h-32 rounded-3xl bg-primary/10 flex items-center justify-center text-3xl font-black text-primary overflow-hidden mb-4 border-2 border-primary/5">
                         {viewStaff.photo ? (
                           <img src={viewStaff.photo} alt={viewStaff.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        ) : viewStaff.name[0]}
+                        ) : (viewStaff.name?.[0] || '?')}
                       </div>
                       <h4 className="text-xl font-black text-text-heading text-center mb-1">{viewStaff.name} {viewStaff.surname}</h4>
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${viewStaff.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -14255,7 +14256,7 @@ const RoleAssignPanel = ({ users, setUsers, currentUser }: any) => {
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${
                   selectedUser?.id === u.id ? 'bg-primary text-white' : 'bg-primary/10 text-primary'
                 }`}>
-                  {u.name[0]}
+                  {u.name?.[0] || '?'}
                 </div>
                 <div>
                   <p className="font-bold text-sm text-text-heading">{u.name}</p>
@@ -14279,7 +14280,7 @@ const RoleAssignPanel = ({ users, setUsers, currentUser }: any) => {
           <div className="space-y-8">
             <div className="flex items-center gap-6 pb-6 border-b border-slate-100">
               <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center text-primary font-black text-3xl">
-                {selectedUser.name[0]}
+                {selectedUser?.name?.[0] || '?'}
               </div>
               <div className="flex-1">
                 <h3 className="text-3xl font-black text-text-heading uppercase tracking-tight">{selectedUser.name}</h3>
@@ -14916,7 +14917,7 @@ const SuperAdminPanel = ({ users, setUsers, schoolProfile, setSchoolProfile }: a
                   <td className="py-6 px-6">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-black shadow-inner">
-                        {user.name[0]}
+                        {user.name?.[0] || '?'}
                       </div>
                       <div>
                         <p className="font-black text-text-heading text-base">{user.name}</p>
@@ -15082,6 +15083,11 @@ export default function App() {
           setDbStatus('error');
         } else {
           setDbStatus('connected');
+        }
+
+        if (localStorage.getItem('hope_school_migrations_run_v2') === 'true') {
+          console.log('Database migrations already completed. Skipping for lightning-fast startup!');
+          return;
         }
 
         // Consolidated Migrations to reduce RPC calls and potential failures
@@ -15791,6 +15797,8 @@ const schoolMigrations = `
           `;
           const { error: errFinalPolicies } = await supabase.rpc('exec_sql', { sql_query: finalizeRlsPolicies });
           if (errFinalPolicies) console.error('Final RLS Policies consolidation failed:', errFinalPolicies);
+          
+          localStorage.setItem('hope_school_migrations_run_v2', 'true');
         } catch (migrationErr) {
           console.error('Migration execution failed:', migrationErr);
         }
@@ -16027,48 +16035,129 @@ const schoolMigrations = `
       return;
     }
     try {
+      // Prepare all master tables to fetch
+      const tables = ['categories', 'castes', 'religions', 'titles', 'classes', 'sections', 'subjects', 'genders', 'departments', 'designations'];
 
-    // Fetch Users
-    try {
-        const { data: usersData } = await supabase.from('users').select('*');
-        if (usersData && usersData.length > 0) {
-          const formattedUsers = usersData.map(u => {
-            const username = u.username || u.id || 'unknown';
-            return {
-              ...u,
-              id: username,
-              dbId: u.id,
-              dbUsername: u.username,
-              name: u.name || (username ? username.charAt(0).toUpperCase() + username.slice(1) : 'Unknown User'),
-              permissions: u.permissions || []
-            };
+      // Execute all 38+ table queries in a single concurrent Promise.all batch
+      const [
+        usersRes,
+        enquiriesRes,
+        visitorsRes,
+        complaintsRes,
+        incomeHeadsRes,
+        expenseHeadsRes,
+        incomesRes,
+        expensesRes,
+        deptRes,
+        desigRes,
+        profileRes,
+        sessionsRes,
+        camerasRes,
+        studentsRes,
+        fTypesRes,
+        fMasterRes,
+        feeDataRes,
+        cEntriesRes,
+        staffRes,
+        sLeavesRes,
+        sAttendanceRes,
+        noticesDataRes,
+        commTemplatesRes,
+        tTableRes,
+        tAssignmentsRes,
+        syllabusDataRes,
+        homeworkDataRes,
+        studAttendanceRes,
+        examsDataRes,
+        eSchedulesRes,
+        eResultsRes,
+        rTemplatesRes,
+        rCardsRes,
+        hRoomsRes,
+        hStaffRes,
+        hBedsRes,
+        hAttendanceRes,
+        cEventsRes,
+        ...masterResults
+      ] = await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('enquiries').select('*').order('created_at', { ascending: false }),
+        supabase.from('visitors').select('*').order('created_at', { ascending: false }),
+        supabase.from('complaints').select('*').order('created_at', { ascending: false }),
+        supabase.from('income_heads').select('*'),
+        supabase.from('expense_heads').select('*'),
+        supabase.from('incomes').select('*'),
+        supabase.from('expenses').select('*'),
+        supabase.from('departments').select('*'),
+        supabase.from('designations').select('*'),
+        supabase.from('school_profile').select('*'),
+        supabase.from('academic_sessions').select('year'),
+        supabase.from('camera_settings').select('*'),
+        supabase.from('students').select('*'),
+        supabase.from('fee_types').select('*'),
+        supabase.from('fee_master').select('*'),
+        supabase.from('fee_collections').select('*'),
+        supabase.from('contra_entries').select('*').order('created_at', { ascending: false }),
+        supabase.from('staff').select('*'),
+        supabase.from('staff_leave_requests').select('*'),
+        supabase.from('staff_attendance').select('*').order('attendance_date', { ascending: false }),
+        supabase.from('notices').select('*').order('date', { ascending: false }),
+        supabase.from('communication_templates').select('*'),
+        supabase.from('time_table').select('*'),
+        supabase.from('teacher_assignments').select('*'),
+        supabase.from('syllabus').select('*'),
+        supabase.from('homework').select('*'),
+        supabase.from('student_attendance').select('*').order('created_at', { ascending: false }),
+        supabase.from('exams').select('*'),
+        supabase.from('exam_schedules').select('*'),
+        supabase.from('exam_results').select('*'),
+        supabase.from('report_card_templates').select('*'),
+        supabase.from('report_cards').select('*'),
+        supabase.from('hostel_rooms').select('*'),
+        supabase.from('hostel_staff').select('*'),
+        supabase.from('hostel_beds').select('*'),
+        supabase.from('hostel_attendance').select('*'),
+        supabase.from('calendar_events').select('*'),
+        ...tables.map(table => supabase!.from(table).select('name'))
+      ]);
+
+      // 1. Process Users
+      const usersData = usersRes.data;
+      if (usersData && usersData.length > 0) {
+        const formattedUsers = usersData.map(u => {
+          const username = u.username || u.id || 'unknown';
+          return {
+            ...u,
+            id: username,
+            dbId: u.id,
+            dbUsername: u.username,
+            name: u.name || (username ? username.charAt(0).toUpperCase() + username.slice(1) : 'Unknown User'),
+            permissions: u.permissions || []
+          };
+        });
+        
+        // Merge with initial system users to ensure admin, warden, etc are always there
+        setUsers(prev => {
+          const systemIds = ['admin', 'DC0018', 'warden', 'accountant'];
+          const systemUsers = prev.filter(u => systemIds.some(id => u.id === id || u.username === id));
+          
+          // Create a map of existing users in fetched data
+          const fetchedMap = new Map(formattedUsers.map(u => [u.id, u]));
+          
+          // Keep system users if they are not in the fetched data
+          const finalUsers = [...formattedUsers];
+          systemUsers.forEach(su => {
+            if (!fetchedMap.has(su.id)) {
+              finalUsers.push(su);
+            }
           });
           
-          // Merge with initial system users to ensure admin, warden, etc are always there
-          setUsers(prev => {
-            const systemIds = ['admin', 'DC0018', 'warden', 'accountant'];
-            const systemUsers = prev.filter(u => systemIds.some(id => u.id === id || u.username === id));
-            
-            // Create a map of existing users in fetched data
-            const fetchedMap = new Map(formattedUsers.map(u => [u.id, u]));
-            
-            // Keep system users if they are not in the fetched data
-            const finalUsers = [...formattedUsers];
-            systemUsers.forEach(su => {
-              if (!fetchedMap.has(su.id)) {
-                finalUsers.push(su);
-              }
-            });
-            
-            return finalUsers;
-          });
-        }
-      } catch (err) {
-        console.error('Error fetching users:', err);
+          return finalUsers;
+        });
       }
 
-      // Fetch Front Office Data
-      const { data: enquiriesData } = await supabase.from('enquiries').select('*').order('created_at', { ascending: false });
+      // 2. Process Front Office Data
+      const enquiriesData = enquiriesRes.data;
       if (enquiriesData) setAdmissionEnquiries(enquiriesData.map(e => ({
         id: e.id,
         name: e.student_name,
@@ -16081,7 +16170,7 @@ const schoolMigrations = `
         status: e.status
       })));
 
-      const { data: visitorsData } = await supabase.from('visitors').select('*').order('created_at', { ascending: false });
+      const visitorsData = visitorsRes.data;
       if (visitorsData) setVisitors(visitorsData.map(v => ({
         id: v.id,
         name: v.name,
@@ -16095,7 +16184,7 @@ const schoolMigrations = `
         outTime: v.out_time
       })));
 
-      const { data: complaintsData } = await supabase.from('complaints').select('*').order('created_at', { ascending: false });
+      const complaintsData = complaintsRes.data;
       if (complaintsData) setComplaints(complaintsData.map(c => ({
         id: c.id,
         name: c.complainant_name,
@@ -16106,52 +16195,46 @@ const schoolMigrations = `
         status: c.status
       })));
 
-      // Fetch Income & Expense
-      const { data: incomeHeadsData } = await supabase.from('income_heads').select('*');
+      // 3. Process Income & Expense Heads
+      const incomeHeadsData = incomeHeadsRes.data;
       if (incomeHeadsData) setIncomeHeads(incomeHeadsData);
 
-      const { data: expenseHeadsData } = await supabase.from('expense_heads').select('*');
+      const expenseHeadsData = expenseHeadsRes.data;
       if (expenseHeadsData) setExpenseHeads(expenseHeadsData);
 
-      const { data: incomesData } = await supabase.from('incomes').select('*');
+      const incomesData = incomesRes.data;
       if (incomesData) setIncomes(incomesData.map(i => ({
         ...i,
         incomeHead: i.income_head,
         invoiceNumber: i.invoice_number
       })));
 
-      const { data: expensesData } = await supabase.from('expenses').select('*');
+      const expensesData = expensesRes.data;
       if (expensesData) setExpenses(expensesData.map(e => ({
         ...e,
         expenseHead: e.expense_head,
         invoiceNumber: e.invoice_number
       })));
 
-      // Fetch Master Data
-      const tables = ['categories', 'castes', 'religions', 'titles', 'classes', 'sections', 'subjects', 'genders', 'departments', 'designations'];
+      // 4. Process Master Data
       const newMasterData = { ...masterData };
-      
-      for (const table of tables) {
-        const { data } = await supabase.from(table).select('name');
-        if (data && data.length > 0) {
-          newMasterData[table] = data.map(item => item.name);
+      tables.forEach((table, index) => {
+        const mRes = masterResults[index];
+        if (mRes && mRes.data && mRes.data.length > 0) {
+          newMasterData[table] = mRes.data.map(item => item.name);
         }
-      }
+      });
       setMasterData(newMasterData);
 
-      // Fetch Departments and Designations (Object arrays for HR Panel)
-      const { data: deptData } = await supabase.from('departments').select('*');
+      // 5. Process Departments and Designations (Object arrays for HR Panel)
+      const deptData = deptRes.data;
       if (deptData) setDepartments(deptData);
 
-      const { data: desigData } = await supabase.from('designations').select('*');
+      const desigData = desigRes.data;
       if (desigData) setDesignations(desigData);
 
-      // Fetch School Profile
-      let { data: profile } = await supabase.from('school_profile').select('*').eq('id', '00000000-0000-0000-0000-000000000001').maybeSingle();
-      if (!profile) {
-        const { data: anyProfile } = await supabase.from('school_profile').select('*').limit(1).maybeSingle();
-        profile = anyProfile;
-      }
+      // 6. Process School Profile
+      const profile = profileRes.data?.find((p: any) => p.id === '00000000-0000-0000-0000-000000000001') || profileRes.data?.[0];
       if (profile) {
         let loadedName = profile.school_name || 'SUBRAI MISSION CONVENT SCHOOL';
         setSchoolProfile((prev: any) => ({
@@ -16179,14 +16262,14 @@ const schoolMigrations = `
         setTaxes(profile.tax_percentage || 0);
       }
 
-      // Fetch Academic Sessions
-      const { data: sessionsData } = await supabase.from('academic_sessions').select('year');
+      // 7. Process Academic Sessions
+      const sessionsData = sessionsRes.data;
       if (sessionsData && sessionsData.length > 0) {
         setSchoolProfile((prev: any) => ({ ...prev, sessions: sessionsData.map((s: any) => s.year) }));
       }
 
-      // Fetch Camera Settings
-      const { data: cameras } = await supabase.from('camera_settings').select('*');
+      // 8. Process Camera Settings
+      const cameras = camerasRes.data;
       if (cameras && cameras.length > 0) {
         setSchoolProfile((prev: any) => ({ 
           ...prev, 
@@ -16194,71 +16277,67 @@ const schoolMigrations = `
         }));
       }
 
-      // Fetch Students
-      try {
-        const { data: studentsData } = await supabase.from('students').select('*');
-        if (studentsData) {
-          setStudents(studentsData.map((s: any) => ({
-            id: s.id,
-            studentId: s.student_id,
-            title: s.title,
-            name: s.first_name,
-            surname: s.surname,
-            studentType: s.student_type,
-            session: s.academic_session,
-            class: s.class_name,
-            section: s.section_name,
-            rollNumber: s.roll_number,
-            caste: s.caste,
-            category: s.category,
-            religion: s.religion,
-            gender: s.gender,
-            dob: s.date_of_birth,
-            bloodGroup: s.blood_group,
-            email: s.email,
-            aadhaarNumber: s.aadhaar_number,
-            panNumber: s.pan_number,
-            passportNumber: s.passport_number,
-            fatherName: s.father_name,
-            motherName: s.mother_name,
-            fatherMobile: s.father_mobile,
-            motherMobile: s.mother_mobile,
-            fatherIncome: s.father_income,
-            fatherSourceOfIncome: s.father_source_of_income,
-            motherIncome: s.mother_income,
-            motherSourceOfIncome: s.mother_source_of_income,
-            address: s.residential_address,
-            emergencyContact: s.emergency_contact,
-            localGuardianContact: s.local_guardian_contact,
-            allergy: s.allergies,
-            hasDisability: s.disability === 'Yes',
-            disabilityDetails: s.disability_details || '',
-            admissionDate: s.admission_date,
-            photo: s.photo_url,
-            relationsInSchool: s.relations || [],
-            documents: s.documents || []
-          })));
-        }
-      } catch (err) {
-        console.error('Error fetching students:', err);
+      // 9. Process Students
+      const studentsData = studentsRes.data;
+      if (studentsData) {
+        setStudents(studentsData.map((s: any) => ({
+          id: s.id,
+          studentId: s.student_id,
+          title: s.title,
+          name: s.first_name,
+          surname: s.surname,
+          studentType: s.student_type,
+          session: s.academic_session,
+          class: s.class_name,
+          section: s.section_name,
+          rollNumber: s.roll_number,
+          caste: s.caste,
+          category: s.category,
+          religion: s.religion,
+          gender: s.gender,
+          dob: s.date_of_birth,
+          bloodGroup: s.blood_group,
+          email: s.email,
+          aadhaarNumber: s.aadhaar_number,
+          panNumber: s.pan_number,
+          passportNumber: s.passport_number,
+          fatherName: s.father_name,
+          motherName: s.mother_name,
+          fatherMobile: s.father_mobile,
+          motherMobile: s.mother_mobile,
+          fatherIncome: s.father_income,
+          fatherSourceOfIncome: s.father_source_of_income,
+          motherIncome: s.mother_income,
+          motherSourceOfIncome: s.mother_source_of_income,
+          address: s.residential_address,
+          emergencyContact: s.emergency_contact,
+          localGuardianContact: s.local_guardian_contact,
+          allergy: s.allergies,
+          hasDisability: s.disability === 'Yes',
+          disabilityDetails: s.disability_details || '',
+          admissionDate: s.admission_date,
+          photo: s.photo_url,
+          relationsInSchool: s.relations || [],
+          documents: s.documents || []
+        })));
       }
 
-      // Fetch Fee Data
-      const { data: fTypes } = await supabase.from('fee_types').select('*');
+      // 10. Process Fee Data
+      const fTypes = fTypesRes.data;
       if (fTypes) setFeeTypes(fTypes.map(ft => ({ id: ft.id, name: ft.name, description: ft.description })));
 
-        const { data: fMaster } = await supabase.from('fee_master').select('*');
-        if (fMaster) setFeeMaster(fMaster.map(fm => ({
-          id: fm.id,
-          class: fm.class_name || fm.class,
-          feeType: fm.fee_type,
-          amount: fm.amount,
-          frequency: fm.frequency,
-          studentType: fm.student_type,
-          session: fm.academic_session || fm.session
-        })));
+      const fMaster = fMasterRes.data;
+      if (fMaster) setFeeMaster(fMaster.map(fm => ({
+        id: fm.id,
+        class: fm.class_name || fm.class,
+        feeType: fm.fee_type,
+        amount: fm.amount,
+        frequency: fm.frequency,
+        studentType: fm.student_type,
+        session: fm.academic_session || fm.session
+      })));
 
-      const { data: feeData } = await supabase.from('fee_collections').select('*');
+      const feeData = feeDataRes.data;
       if (feeData) setFeeTransactions(feeData.map(ft => ({
         id: ft.id,
         studentId: ft.student_id,
@@ -16284,11 +16363,9 @@ const schoolMigrations = `
         session: ft.academic_session
       })));
 
-      const { data: cEntries, error: cError } = await supabase.from('contra_entries').select('*').order('created_at', { ascending: false });
-      if (cError) console.error('Error fetching contra entries:', cError);
+      const cEntries = cEntriesRes.data;
       if (cEntries) {
         setContraEntries(cEntries);
-        // Sync adjustmentLogs with contraEntries from DB
         setAdjustmentLogs(cEntries.map(ce => ({
           id: ce.id,
           type: ce.type,
@@ -16301,8 +16378,8 @@ const schoolMigrations = `
 
       // Calculate Balances
       if (feeData && cEntries) {
-        let bBal = 0; // Initial hardcoded bank balance
-        let cBal = 0;   // Initial hardcoded cash balance
+        let bBal = 0;
+        let cBal = 0;
 
         feeData.forEach((t: any) => {
           if (t.payment_mode === 'Cash') {
@@ -16330,8 +16407,8 @@ const schoolMigrations = `
         setCashBalance(cBal);
       }
 
-      // Fetch HR Data
-      const { data: staffData } = await supabase.from('staff').select('*');
+      // 11. Process HR Data
+      const staffData = staffRes.data;
       if (staffData) {
         const mappedStaff = staffData.map(s => ({
           id: s.id,
@@ -16370,7 +16447,7 @@ const schoolMigrations = `
         }
       }
 
-      const { data: sLeaves } = await supabase.from('staff_leave_requests').select('*');
+      const sLeaves = sLeavesRes.data;
       if (sLeaves) setStaffLeaveRequests(sLeaves.map(sl => ({
         id: sl.id,
         staffId: sl.staff_id,
@@ -16381,7 +16458,7 @@ const schoolMigrations = `
         status: sl.status
       })));
 
-      const { data: sAttendance } = await supabase.from('staff_attendance').select('*').order('attendance_date', { ascending: false });
+      const sAttendance = sAttendanceRes.data;
       if (sAttendance) setStaffAttendance(sAttendance.map(sa => ({
         ...sa,
         staffId: sa.staff_id,
@@ -16391,8 +16468,8 @@ const schoolMigrations = `
         ipAddress: sa.ip_address
       })));
 
-      // Fetch Notice Board
-      const { data: noticesData } = await supabase.from('notices').select('*').order('date', { ascending: false });
+      // 12. Process Notice Board
+      const noticesData = noticesDataRes.data;
       if (noticesData) {
         const mappedNotices = noticesData.map(n => ({
           id: n.id,
@@ -16406,8 +16483,8 @@ const schoolMigrations = `
         setNotifications(mappedNotices);
       }
 
-      // Fetch Communication Templates
-      const { data: commTemplates } = await supabase.from('communication_templates').select('*');
+      // 13. Process Communication Templates
+      const commTemplates = commTemplatesRes.data;
       if (commTemplates) setCommunicationTemplates(commTemplates.map(ct => ({
         id: ct.id,
         name: ct.name,
@@ -16415,8 +16492,8 @@ const schoolMigrations = `
         body: ct.body
       })));
 
-      // Fetch Academics
-      const { data: tTable } = await supabase.from('time_table').select('*');
+      // 14. Process Academics
+      const tTable = tTableRes.data;
       if (tTable) {
         // Group by class and section
         const grouped = tTable.reduce((acc: any, curr: any) => {
@@ -16434,7 +16511,7 @@ const schoolMigrations = `
         setTimeTables(Object.values(grouped));
       }
 
-      const { data: tAssignments } = await supabase.from('teacher_assignments').select('*');
+      const tAssignments = tAssignmentsRes.data;
       if (tAssignments) setTeacherAssignments(tAssignments.map(ta => {
         let subjects: any[] = [];
         try {
@@ -16454,7 +16531,7 @@ const schoolMigrations = `
         };
       }));
 
-      const { data: syllabusData } = await supabase.from('syllabus').select('*');
+      const syllabusData = syllabusDataRes.data;
       if (syllabusData) setSyllabuses(syllabusData.map(s => ({
         id: s.id,
         class: s.class_name,
@@ -16466,7 +16543,7 @@ const schoolMigrations = `
         status: s.status
       })));
 
-      const { data: homeworkData } = await supabase.from('homework').select('*');
+      const homeworkData = homeworkDataRes.data;
       if (homeworkData) setHomeworks(homeworkData.map(h => ({
         id: h.id,
         class: h.class_name,
@@ -16480,8 +16557,8 @@ const schoolMigrations = `
         submissions: []
       })));
 
-      // Fetch Student Attendance
-      const { data: studAttendance } = await supabase.from('student_attendance').select('*').order('created_at', { ascending: false });
+      // 15. Process Student Attendance
+      const studAttendance = studAttendanceRes.data;
       if (studAttendance) setAttendance(studAttendance.map(sa => ({
         id: sa.id,
         studentId: sa.student_id,
@@ -16496,8 +16573,8 @@ const schoolMigrations = `
         location: sa.location
       })));
 
-      // Fetch Examination
-      const { data: examsData } = await supabase.from('exams').select('*');
+      // 16. Process Examination
+      const examsData = examsDataRes.data;
       if (examsData) setExams(examsData.map(e => ({
         id: e.id,
         name: e.exam_name,
@@ -16507,7 +16584,7 @@ const schoolMigrations = `
         status: e.status
       })));
 
-      const { data: eSchedules } = await supabase.from('exam_schedules').select('*');
+      const eSchedules = eSchedulesRes.data;
       if (eSchedules) setExamSchedules(eSchedules.map(es => ({
         id: es.id,
         examId: es.exam_id || es.exam_name,
@@ -16522,7 +16599,7 @@ const schoolMigrations = `
         answerSheetUrl: es.answer_sheet_url
       })));
 
-      const { data: eResults } = await supabase.from('exam_results').select('*');
+      const eResults = eResultsRes.data;
       if (eResults) setExamResults(eResults.map(er => ({
         id: er.id,
         examName: er.exam_name,
@@ -16534,7 +16611,7 @@ const schoolMigrations = `
         feedback: er.feedback
       })));
 
-      const { data: rTemplates } = await supabase.from('report_card_templates').select('*');
+      const rTemplates = rTemplatesRes.data;
       if (rTemplates) setReportCardTemplates(rTemplates.map(rt => ({
         id: rt.id,
         name: rt.template_name,
@@ -16542,7 +16619,6 @@ const schoolMigrations = `
           if (typeof t === 'string') {
             return { id: t.toLowerCase().replace(/\s+/g, '-'), name: t, subColumns: [{ id: 'm1', name: 'Marks', maxMarks: 100 }] };
           }
-          // Handle cases where subColumns might be missing or empty
           if (t && typeof t === 'object') {
             return {
               id: t.id || ('t' + Date.now() + Math.random().toString(36).substr(2, 9)),
@@ -16557,7 +16633,7 @@ const schoolMigrations = `
         subjects: rt.subjects
       })));
 
-      const { data: rCards } = await supabase.from('report_cards').select('*');
+      const rCards = rCardsRes.data;
       if (rCards) setReportCards(rCards.map(rc => ({
         id: rc.id,
         studentId: rc.student_id,
@@ -16572,8 +16648,8 @@ const schoolMigrations = `
         isPublished: rc.is_published
       })));
 
-      // Fetch Hostel
-      const { data: hRooms } = await supabase.from('hostel_rooms').select('*');
+      // 17. Process Hostel
+      const hRooms = hRoomsRes.data;
       if (hRooms) setHostelRooms(hRooms.map(hr => ({
         id: hr.id,
         hostelName: hr.hostel_name,
@@ -16586,7 +16662,7 @@ const schoolMigrations = `
         gender: hr.gender
       })));
 
-      const { data: hStaff } = await supabase.from('hostel_staff').select('*');
+      const hStaff = hStaffRes.data;
       if (hStaff) setHostelStaff(hStaff.map(hs => ({
         id: hs.id,
         name: hs.name,
@@ -16596,7 +16672,7 @@ const schoolMigrations = `
         shift: hs.shift
       })));
 
-      const { data: hBeds } = await supabase.from('hostel_beds').select('*');
+      const hBeds = hBedsRes.data;
       if (hBeds) setHostelBeds(hBeds.map(hb => ({
         id: hb.id,
         roomId: hb.room_id,
@@ -16605,7 +16681,7 @@ const schoolMigrations = `
         studentId: hb.student_id
       })));
 
-      const { data: hAttendance } = await supabase.from('hostel_attendance').select('*');
+      const hAttendance = hAttendanceRes.data;
       if (hAttendance) setHostelAttendance(hAttendance.map(ha => ({
         id: ha.id,
         studentId: ha.student_id,
@@ -16618,8 +16694,8 @@ const schoolMigrations = `
         isHostel: true
       })));
 
-      // Fetch Calendar Events
-      const { data: cEvents } = await supabase.from('calendar_events').select('*');
+      // 18. Process Calendar Events
+      const cEvents = cEventsRes.data;
       if (cEvents) setCalendarEvents(cEvents.map(ce => ({
         id: ce.id,
         title: ce.title,
@@ -21032,7 +21108,7 @@ const schoolMigrations = `
                 <div className="w-full bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-6">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center font-bold">
-                      {selectedStudentQR.name[0]}
+                      {selectedStudentQR?.name?.[0] || '?'}
                     </div>
                     <div className="text-left">
                       <p className="text-sm font-black text-text-heading uppercase leading-none mb-1">
@@ -21707,7 +21783,7 @@ const HostelModule = ({
                         <div key={record.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-primary">
-                              {student?.name[0]}
+                              {student?.name?.[0] || '?'}
                             </div>
                             <div>
                               <p className="font-bold text-sm">{student?.name} {student?.surname}</p>
@@ -21924,7 +22000,7 @@ const HostelModule = ({
                             <td className="py-4 px-4">
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                                  {student.name[0]}
+                                  {student.name?.[0] || '?'}
                                 </div>
                                 <div>
                                   <p className="font-bold">{student.name} {student.surname}</p>
@@ -22064,7 +22140,7 @@ const HostelModule = ({
                           <td className="py-4 px-4">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                                {student?.name[0]}
+                                {student?.name?.[0] || '?'}
                               </div>
                               <div>
                                 <p className="font-bold">{student?.name} {student?.surname}</p>
@@ -22116,7 +22192,7 @@ const HostelModule = ({
                 <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-full -mr-12 -mt-12"></div>
                 <div className="flex items-center gap-4 mb-6">
                   <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-primary font-black text-2xl">
-                    {s.name[0]}
+                    {s.name?.[0] || '?'}
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-text-heading uppercase tracking-tight">{s.name}</h3>
@@ -22932,7 +23008,7 @@ const IDCardsModule = ({
       <div className="flex-1 flex flex-col items-center pt-8 px-6">
         <div className="w-28 h-28 rounded-full border-4 border-emerald-100 p-1 mb-6">
           <div className="w-full h-full rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 font-black text-3xl overflow-hidden">
-            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : student.name[0]}
+            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : (student.name?.[0] || '?')}
           </div>
         </div>
         <h3 className="text-xl font-black text-text-heading text-center uppercase">{student.name} {student.surname}</h3>
@@ -23318,7 +23394,7 @@ const IDCardsModule = ({
                   </div>
                 </>
               )}
-              {selectedClass && activeTab !== 'teacher' && activeTab !== 'experience' && (
+              {filteredPeople.length > 0 && (
                 <button 
                   onClick={() => {
                     setBulkMode(!bulkMode);
@@ -23331,7 +23407,7 @@ const IDCardsModule = ({
                   }`}
                 >
                   <FileOutput size={18} />
-                  {bulkMode ? 'Exit Bulk Mode' : 'Generate All Certs'}
+                  {bulkMode ? 'Exit Bulk Mode' : 'Bulk Download / Print'}
                 </button>
               )}
             </div>
@@ -23401,7 +23477,7 @@ const IDCardsModule = ({
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-0 z-20 no-print">
                 <div>
                   <h3 className="font-black text-text-heading">Bulk Generation Mode</h3>
-                  <p className="text-xs text-text-sub font-bold text-text-sub">Generating {filteredPeople.length} {activeTab}s for Class {selectedClass}</p>
+                  <p className="text-xs text-text-sub font-bold text-text-sub">Generating {filteredPeople.length} {activeTab}s{selectedClass ? ` for Class ${selectedClass}` : ' for All Classes'}</p>
                 </div>
                 <div className="flex items-center gap-2 no-print flex-wrap">
                   <button 
@@ -23463,7 +23539,22 @@ const IDCardsModule = ({
               </div>
             </div>
           ) : (
-            <Card className="p-12 min-h-[600px] flex flex-col items-center justify-center bg-slate-50/50 border-dashed border-2 border-slate-200">
+            <Card className="p-12 min-h-[600px] flex flex-col items-center justify-center bg-slate-50/50 border-dashed border-2 border-slate-200 relative">
+              {filteredPeople.length > 0 && (
+                <div className="absolute top-4 right-4 no-print">
+                  <button
+                    onClick={() => {
+                      setBulkMode(true);
+                      setSelectedPerson(null);
+                    }}
+                    className="flex items-center gap-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white px-4 py-2.5 rounded-xl text-xs font-black shadow-lg shadow-rose-500/20 hover:shadow-xl transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                    title="Switch to bulk download and printing mode"
+                  >
+                    <FolderDown size={14} />
+                    Bulk Download All ({filteredPeople.length})
+                  </button>
+                </div>
+              )}
               {selectedPerson ? (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
