@@ -93,7 +93,8 @@ import {
   Heart,
   Loader2,
   Check,
-  FolderDown
+  FolderDown,
+  Droplet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -129,6 +130,15 @@ import { TRANSCRIBED_STUDENTS_TSV } from './data/transcribedStudents';
 type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'settings' | 'fee-management' | 'academics' | 'attendance' | 'examination' | 'id-cards' | 'hostel' | 'admin-360' | 'class-360' | 'due-fees' | 'teacher-panel' | 'student-panel' | 'leave-management' | 'reports' | 'calendar' | 'human-resource' | 'staff-attendance' | 'communicate' | 'front-office' | 'income-expense' | 'profile-settings' | 'user-logs' | 'super-admin-panel' | 'sql-editor' | 'attendance-public';
 
 // --- Utilities ---
+
+const html2canvasWithTimeout = async (element: HTMLElement, options: any, timeoutMs = 4000): Promise<HTMLCanvasElement> => {
+  return Promise.race([
+    html2canvas(element, options),
+    new Promise<HTMLCanvasElement>((_, reject) => 
+      setTimeout(() => reject(new Error('html2canvas timed out')), timeoutMs)
+    )
+  ]);
+};
 
 const extractIdFromQR = (text: string, paramName: string = 'id') => {
   if (text && text.startsWith('http')) {
@@ -7988,22 +7998,24 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
         const element = receiptRef.current;
         let canvas;
         try {
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 3, // Higher scale for better clarity on thermal printers
             useCORS: true,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff'
-          });
+          }, 6000);
           // Verify exportability
           canvas.toDataURL('image/png');
         } catch (corsError) {
           console.warn('CORS html2canvas failed for receipt print, retrying without external images...', corsError);
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 3,
             useCORS: false,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff'
-          });
+          }, 6000);
         }
         
         const imgData = canvas.toDataURL('image/png');
@@ -8065,20 +8077,22 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
       try {
         let canvas;
         try {
-          canvas = await html2canvas(receiptRef.current, {
+          canvas = await html2canvasWithTimeout(receiptRef.current, {
             scale: 2,
             useCORS: true,
-            logging: false
-          });
+            logging: false,
+            imageTimeout: 3000
+          }, 6000);
           // Verify exportability
           canvas.toDataURL('image/png');
         } catch (corsError) {
           console.warn('CORS html2canvas failed for receipt PDF download, retrying without external images...', corsError);
-          canvas = await html2canvas(receiptRef.current, {
+          canvas = await html2canvasWithTimeout(receiptRef.current, {
             scale: 2,
             useCORS: false,
-            logging: false
-          });
+            logging: false,
+            imageTimeout: 3000
+          }, 6000);
         }
         const imgData = canvas.toDataURL('image/png');
         
@@ -8094,7 +8108,17 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
         const pdfHeight = pdf.internal.pageSize.getHeight();
         
         pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Receipt_${transaction.invoiceNumber || transaction.id}.pdf`);
+        
+        // Standalone standard secure download logic compatible with iframe/sandboxing
+        const blob = pdf.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = blobUrl;
+        downloadLink.download = `Receipt_${transaction.invoiceNumber || transaction.id}.pdf`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(blobUrl);
       } catch (err) {
         console.error('Error during receipt PDF download:', err);
         alert('Could not download PDF. Please try printing instead.');
@@ -16046,7 +16070,7 @@ const schoolMigrations = `
     accountantPanelId: 'accountant',
     accountantPanelPassword: 'accountantpassword',
     address: 'Teliamura, Khowai, Tripura, Pin: 799205',
-    logo: 'https://images.unsplash.com/photo-1594608661623-aa0bd3a67d28?q=80&w=400&auto=format&fit=crop', // Default fallback
+    logo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><rect width="100" height="100" rx="20" fill="%230f172a"/><path d="M50 15 L20 30 L20 65 C20 80 50 88 50 88 C50 88 80 80 80 65 L80 30 Z" fill="%231e293b" stroke="%233b82f6" stroke-width="4"/><path d="M50 25 L32 33 L32 40 C32 55 50 68 50 68 C50 68 68 55 68 40 L68 33 Z" fill="none" stroke="%2360a5fa" stroke-width="3"/><path d="M50 42 L42 50 L58 50 Z M50 35 L50 42" stroke="%23f59e0b" stroke-width="3" stroke-linecap="round"/></svg>', // Default fallback
     principalSignature: '',
     classTeacherSignature: '',
     schoolStamp: '',
@@ -22632,17 +22656,17 @@ const IDCardsModule = ({
 
     const rightDetails = isTeacher 
       ? [
-          { label: 'D.O.B', value: formatDateDMY(person.dob) },
-          { label: 'Father/Spouse', value: person.fatherName || 'N/A' },
-          { label: 'Contact No', value: person.mobile || person.phone || 'N/A' },
-          { label: 'Address', value: person.address || 'N/A' },
+          { label: 'D.O.B', value: person.dob || person.birthDate || 'N/A' },
+          { label: 'FATHER/SPOUSE', value: person.fatherName || 'N/A' },
+          { label: 'CONTACT NO.', value: person.mobile || person.phone || 'N/A' },
+          { label: 'ADDRESS', value: person.address || 'N/A' },
         ]
       : [
-          { label: 'D.O.B', value: formatDateDMY(person.dob || person.birthDate) },
-          { label: 'Father\'s Name', value: person.fatherName || 'N/A' },
-          { label: 'Mother\'s Name', value: person.motherName || 'N/A' },
-          { label: 'Contact No', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
-          { label: 'Address', value: person.residentialAddress || person.address || 'N/A' },
+          { label: 'D.O.B', value: person.dob || person.birthDate || 'N/A' },
+          { label: 'FATHER NAME', value: person.fatherName || 'N/A' },
+          { label: 'MOTHER NAME', value: person.motherName || 'N/A' },
+          { label: 'ADDRESS', value: person.residentialAddress || person.address || 'N/A' },
+          { label: 'CONTACT NO.', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
         ];
 
     return (
@@ -22695,41 +22719,45 @@ const IDCardsModule = ({
                     </div>
 
                     {!isTeacher ? (
-                      <div className="flex flex-col items-center text-center mt-1 w-full gap-0.5">
-                        <div className="flex flex-col">
-                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Class-Section</span>
-                          <span className="font-bold text-slate-800 uppercase text-[8.5px] mt-0.5">
+                      <div className="flex flex-col items-center text-center mt-2 w-full gap-1.5">
+                        <div className="flex flex-col w-full text-center">
+                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">CLASS / SECTION</span>
+                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
                             {person.class || 'N/A'} - {person.section || 'N/A'}
                           </span>
                         </div>
-                        <div className="flex flex-col mt-0.5">
-                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Roll Number</span>
-                          <span className={`font-black ${themeText} text-[9px] ${badgeBgClass} border px-1 py-0.5 rounded mt-0.5 min-w-[32px]`}>
+                        <div className="flex flex-col w-full text-center">
+                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">ROLLNO</span>
+                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
                             {person.rollNumber || person.rollNo || 'N/A'}
                           </span>
                         </div>
-                        <div className={`mt-1 ${badgeBgClass} border ${badgeTextClass} py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5`}>
-                          <Heart size={8} fill="currentColor" className="shrink-0" />
-                          {person.bloodGroup || 'N/A'}
+                        <div className="mt-2 bg-white border border-slate-200 shadow-sm py-1 px-2.5 rounded-full inline-flex items-center gap-1.5 self-center">
+                          <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                            <Droplet size={10} fill="white" className="text-white" />
+                          </div>
+                          <span className="text-[9px] font-black text-slate-800">{person.bloodGroup || 'B+'}</span>
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center text-center mt-1 w-full gap-0.5">
-                        <div className="flex flex-col">
-                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Designation</span>
-                          <span className="font-bold text-slate-800 uppercase text-[8.5px] mt-0.5 truncate max-w-[80px]">
+                      <div className="flex flex-col items-center text-center mt-2 w-full gap-1.5">
+                        <div className="flex flex-col w-full text-center">
+                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">DESIGNATION</span>
+                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
                             {person.designation || 'Teacher'}
                           </span>
                         </div>
-                        <div className="flex flex-col mt-0.5">
-                          <span className={`font-extrabold ${themeText} uppercase tracking-wider text-[6px]`}>Staff ID</span>
-                          <span className="font-black text-slate-700 text-[8.5px] bg-slate-50 border border-slate-100 px-1 py-0.5 rounded mt-0.5">
+                        <div className="flex flex-col w-full text-center">
+                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">STAFF ID</span>
+                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
                             {person.staffId || person.id || 'N/A'}
                           </span>
                         </div>
-                        <div className={`mt-1 ${badgeBgClass} border ${badgeTextClass} py-0.5 px-1.5 rounded-full text-[7px] font-black tracking-wider uppercase inline-flex items-center gap-0.5`}>
-                          <Heart size={8} fill="currentColor" className="shrink-0" />
-                          {person.bloodGroup || 'N/A'}
+                        <div className="mt-2 bg-white border border-slate-200 shadow-sm py-1 px-2.5 rounded-full inline-flex items-center gap-1.5 self-center">
+                          <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                            <Droplet size={10} fill="white" className="text-white" />
+                          </div>
+                          <span className="text-[9px] font-black text-slate-800">{person.bloodGroup || 'N/A'}</span>
                         </div>
                       </div>
                     )}
@@ -22747,8 +22775,10 @@ const IDCardsModule = ({
                     <div className="space-y-1.5 flex-1 mt-1">
                         {rightDetails.map((item, idx) => (
                             <div key={idx} className="flex flex-col text-[8.5px] leading-tight">
-                                <span className="font-extrabold text-slate-400 uppercase tracking-wider text-[6.5px] mb-0.5">{item.label}</span>
-                                <span className="font-black text-slate-800 uppercase truncate bg-slate-50 px-2 py-1 rounded-md border border-slate-100">{item.value}</span>
+                                <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px] mb-0.5">{item.label}</span>
+                                <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2.5 py-1 rounded-xl border border-[#e2e8f0] text-[9.5px] leading-normal min-h-[22px] flex items-center ${item.label === 'ADDRESS' ? 'line-clamp-2 overflow-hidden' : 'truncate'}`}>
+                                  {item.value}
+                                </span>
                             </div>
                         ))}
                     </div>
@@ -22768,14 +22798,14 @@ const IDCardsModule = ({
                 </div>
                 
                 <div className="text-center">
-                     <div className="w-24 h-8 border-b-2 border-slate-100 mx-auto mb-1 flex items-end justify-center relative">
+                     <div className="w-24 h-8 border-b border-slate-200 mx-auto mb-1 flex items-end justify-center relative">
                         {schoolProfile?.principalSignature ? (
                           <img src={schoolProfile?.principalSignature} alt="" className="h-full object-contain mix-blend-multiply absolute bottom-0" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="text-[6px] text-slate-200 italic mb-1 uppercase font-black">Authorized Stamp</div>
                         )}
                      </div>
-                     <p className="text-[7px] font-black uppercase text-slate-500 tracking-[0.15em]">School Principal</p>
+                     <p className="text-[7px] font-black uppercase text-slate-400 tracking-[0.1em]">PRINCIPAL SIGN</p>
                 </div>
             </div>
         </div>
@@ -23337,20 +23367,22 @@ const IDCardsModule = ({
             if (element) {
               let canvas;
               try {
-                canvas = await html2canvas(element, {
+                canvas = await html2canvasWithTimeout(element, {
                   scale: 3,
                   useCORS: true,
                   logging: false,
+                  imageTimeout: 3000,
                   backgroundColor: '#ffffff'
-                });
+                }, 6000);
                 // Test if exportable
                 canvas.toDataURL('image/png');
               } catch (corsError) {
                 console.warn(`CORS print canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-                canvas = await html2canvas(element, {
+                canvas = await html2canvasWithTimeout(element, {
                   scale: 3,
                   useCORS: false,
                   logging: false,
+                  imageTimeout: 3000,
                   backgroundColor: '#ffffff',
                   onclone: (clonedDoc, clonedElement) => {
                     const images = clonedElement.getElementsByTagName('img');
@@ -23361,7 +23393,7 @@ const IDCardsModule = ({
                       }
                     }
                   }
-                });
+                }, 6000);
               }
               const imgData = canvas.toDataURL('image/png');
               iframeDoc.write(`
@@ -23441,20 +23473,22 @@ const IDCardsModule = ({
 
         let canvas;
         try {
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 3,
             useCORS: true,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff'
-          });
+          }, 6000);
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
           console.warn('CORS print single canvas failed, retrying by removing external images to prevent security error...', corsError);
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 3,
             useCORS: false,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff',
             onclone: (clonedDoc, clonedElement) => {
               const images = clonedElement.getElementsByTagName('img');
@@ -23465,7 +23499,7 @@ const IDCardsModule = ({
                 }
               }
             }
-          });
+          }, 6000);
         }
         const imgData = canvas.toDataURL('image/png');
 
@@ -23512,26 +23546,28 @@ const IDCardsModule = ({
       active: true,
       current: 0,
       total: 1,
-      message: `Generating high-quality PDF for ${person.name}...`
+      message: `Generating high-quality PDF for ${person.name || 'document'}...`
     });
 
     try {
       let canvas;
       try {
-        canvas = await html2canvas(element, {
+        canvas = await html2canvasWithTimeout(element, {
           scale: 2,
           useCORS: true,
           logging: false,
+          imageTimeout: 3000,
           backgroundColor: '#ffffff'
-        });
+        }, 6000);
         // Test if exportable
         canvas.toDataURL('image/png');
       } catch (corsError) {
         console.warn(`CORS single PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-        canvas = await html2canvas(element, {
+        canvas = await html2canvasWithTimeout(element, {
           scale: 2,
           useCORS: false,
           logging: false,
+          imageTimeout: 3000,
           backgroundColor: '#ffffff',
           onclone: (clonedDoc, clonedElement) => {
             const images = clonedElement.getElementsByTagName('img');
@@ -23542,17 +23578,30 @@ const IDCardsModule = ({
               }
             }
           }
-        });
+        }, 6000);
       }
       const imgData = canvas.toDataURL('image/png');
       const isLandscape = canvas.width > canvas.height;
+      const pdfW = Math.round(canvas.width / 2);
+      const pdfH = Math.round(canvas.height / 2);
+      
       const pdf = new jsPDF({
         orientation: isLandscape ? 'landscape' : 'portrait',
         unit: 'px',
-        format: [canvas.width / 2, canvas.height / 2]
+        format: [pdfW, pdfH]
       });
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
-      pdf.save(`${activeTab}-${person.name || 'document'}-${person.studentId || person.id || 'id'}.pdf`);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+      
+      // Standalone standard secure download logic compatible with iframe/sandboxing
+      const blob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      downloadLink.download = `${activeTab}-${person.name || 'document'}-${person.studentId || person.id || 'id'}.pdf`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Error generating PDF. Please try printing instead.');
@@ -23601,20 +23650,22 @@ const IDCardsModule = ({
 
         let canvas;
         try {
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 2,
             useCORS: true,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff'
-          });
+          }, 6000);
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
           console.warn(`CORS bulk PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 2,
             useCORS: false,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff',
             onclone: (clonedDoc, clonedElement) => {
               const images = clonedElement.getElementsByTagName('img');
@@ -23625,7 +23676,7 @@ const IDCardsModule = ({
                 }
               }
             }
-          });
+          }, 6000);
         }
         
         const imgData = canvas.toDataURL('image/png');
@@ -23647,7 +23698,16 @@ const IDCardsModule = ({
         message: 'Finalizing and downloading combined PDF document...'
       });
 
-      pdf.save(`Bulk_${activeTab}_ID_Cards_Combined.pdf`);
+      // Standalone standard secure download logic compatible with iframe/sandboxing
+      const blob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      downloadLink.download = `Bulk_${activeTab}_ID_Cards_Combined.pdf`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      URL.revokeObjectURL(blobUrl);
     } catch (err) {
       console.error('Error during combined PDF generation:', err);
       alert('An error occurred during combined PDF generation. Please try printing or download ZIP instead.');
@@ -23692,20 +23752,22 @@ const IDCardsModule = ({
 
         let canvas;
         try {
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 2,
             useCORS: true,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff'
-          });
+          }, 6000);
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
           console.warn(`CORS bulk ZIP canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-          canvas = await html2canvas(element, {
+          canvas = await html2canvasWithTimeout(element, {
             scale: 2,
             useCORS: false,
             logging: false,
+            imageTimeout: 3000,
             backgroundColor: '#ffffff',
             onclone: (clonedDoc, clonedElement) => {
               const images = clonedElement.getElementsByTagName('img');
@@ -23716,7 +23778,7 @@ const IDCardsModule = ({
                 }
               }
             }
-          });
+          }, 6000);
         }
 
         if (format === 'png') {
