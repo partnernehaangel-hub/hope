@@ -22669,29 +22669,32 @@ const IDCardsModule = ({
           { label: 'CONTACT NO.', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
         ];
 
+    const headerHeight = orientation === 'portrait' ? 'h-[165px]' : 'h-[135px]';
+    const headerPt = orientation === 'portrait' ? 'pt-7' : 'pt-5';
+
     return (
       <div className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl overflow-hidden flex flex-col relative font-sans border ${cardBorderClass} mx-auto rounded-2xl`}>
-        {/* Top 1/3 Colored Section - Exactly 1/3 height (470/3 approx 156) */}
-        <div className={`${headerBgClass} h-[156px] flex flex-col items-center justify-center relative p-4 text-center`}>
+        {/* Top 1/3 Colored Section - Safe padding for card cutting */}
+        <div className={`${headerBgClass} ${headerHeight} flex flex-col items-center justify-start relative ${headerPt} px-4 text-center`}>
             {/* Top Border Accent */}
             <div className="absolute top-0 left-0 w-full h-1 bg-black/10" />
             
-            <div className="z-10 mb-2">
+            <div className="z-10 mb-1">
                <h2 className="text-white font-black text-[11px] uppercase tracking-[0.2rem] leading-tight drop-shadow-md">{schoolName}</h2>
-               <p className="text-[7.5px] text-white/90 font-bold uppercase tracking-wider mt-1 leading-tight">{schoolProfile?.address?.substring(0, 80)}</p>
+               <p className="text-[7.5px] text-white/90 font-bold uppercase tracking-wider mt-0.5 leading-tight">{schoolProfile?.address?.substring(0, 80)}</p>
                {schoolContact && (
-                 <div className="mt-1.5 flex flex-col items-center">
-                    <div className="h-px w-20 bg-white/20 mb-1" />
-                    <p className="text-[7px] text-white font-black uppercase tracking-[0.15em] bg-black/20 px-2 py-0.5 rounded-full inline-block">
+                 <div className="mt-1 flex flex-col items-center">
+                    <div className="h-px w-20 bg-white/20 mb-0.5" />
+                    <p className="text-[6.5px] text-white font-black uppercase tracking-[0.15em] bg-black/20 px-2 py-0.5 rounded-full inline-block">
                       PH: {schoolContact}
                     </p>
                  </div>
                )}
             </div>
 
-            {/* QR Code Centered in Upper Middle */}
-            <div className="bg-white p-2 rounded-xl shadow-2xl z-20 border-2 border-white transform hover:scale-105 transition-transform">
-                <QRCode value={idValue} size={65} level="H" style={{ height: "auto", maxWidth: "100%", width: "100%" }} />
+            {/* QR Code Centered in Upper Middle - compact for safety margin */}
+            <div className="bg-white p-1.5 rounded-xl shadow-2xl z-20 border-2 border-white transform hover:scale-105 transition-transform mt-1">
+                <QRCode value={idValue} size={orientation === 'portrait' ? 52 : 44} level="H" style={{ height: "auto", maxWidth: "100%", width: "100%" }} />
             </div>
 
             {/* Identity Card Label Pill - Adjusted position */}
@@ -23141,7 +23144,7 @@ const IDCardsModule = ({
 
   const HostelCard = ({ student }: { student: any }) => (
     <div className="w-[350px] h-[500px] bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200 relative flex flex-col">
-      <div className="bg-emerald-600 p-6 text-white text-center">
+      <div className="bg-emerald-600 pt-8 px-6 pb-6 text-white text-center">
         <h2 className="text-lg font-black uppercase tracking-tight">{schoolProfile.name}</h2>
         <p className="text-[10px] opacity-80 font-medium mt-1 uppercase tracking-widest">Hostel Identity Card</p>
       </div>
@@ -23300,6 +23303,7 @@ const IDCardsModule = ({
   const [bulkMode, setBulkMode] = useState(false);
   const [idTemplate, setIdTemplate] = useState<string>('classic');
   const [generationProgress, setGenerationProgress] = useState<{ active: boolean; current: number; total: number; message: string } | null>(null);
+  const [renderingCard, setRenderingCard] = useState<any | null>(null);
 
   const handlePrint = async () => {
     if (bulkMode) {
@@ -23539,32 +23543,45 @@ const IDCardsModule = ({
   };
 
   const handleDownloadPDF = async (person: any) => {
-    const element = document.getElementById(`card-${person.id || person.studentId}`);
-    if (!element) return;
-    
     setGenerationProgress({
       active: true,
       current: 0,
       total: 1,
-      message: `Generating high-quality PDF for ${person.name || 'document'}...`
+      message: `Preparing document for ${person.name || 'document'}...`
     });
 
     try {
+      setRenderingCard(person);
+      // Wait for React to render the isolated element
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      const element = document.getElementById('bulk-render-temp');
+      if (!element) {
+        throw new Error('Isolated rendering element not found');
+      }
+
+      setGenerationProgress({
+        active: true,
+        current: 1,
+        total: 1,
+        message: `Generating high-quality PDF for ${person.name || 'document'}...`
+      });
+
       let canvas;
       try {
         canvas = await html2canvasWithTimeout(element, {
-          scale: 2,
+          scale: 2.5, // slightly higher scale for ultra sharp single PDF
           useCORS: true,
           logging: false,
           imageTimeout: 3000,
           backgroundColor: '#ffffff'
-        }, 6000);
+        }, 8000);
         // Test if exportable
         canvas.toDataURL('image/png');
       } catch (corsError) {
         console.warn(`CORS single PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
         canvas = await html2canvasWithTimeout(element, {
-          scale: 2,
+          scale: 2.5,
           useCORS: false,
           logging: false,
           imageTimeout: 3000,
@@ -23578,12 +23595,12 @@ const IDCardsModule = ({
               }
             }
           }
-        }, 6000);
+        }, 8000);
       }
       const imgData = canvas.toDataURL('image/png');
       const isLandscape = canvas.width > canvas.height;
-      const pdfW = Math.round(canvas.width / 2);
-      const pdfH = Math.round(canvas.height / 2);
+      const pdfW = Math.round(canvas.width / 2.5);
+      const pdfH = Math.round(canvas.height / 2.5);
       
       const pdf = new jsPDF({
         orientation: isLandscape ? 'landscape' : 'portrait',
@@ -23606,6 +23623,7 @@ const IDCardsModule = ({
       console.error('Error generating PDF:', error);
       alert('Error generating PDF. Please try printing instead.');
     } finally {
+      setRenderingCard(null);
       setGenerationProgress(null);
     }
   };
@@ -23627,11 +23645,8 @@ const IDCardsModule = ({
     });
 
     try {
-      const pdf = new jsPDF({
-        orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
-        unit: 'px',
-        format: orientation === 'portrait' ? [325, 470] : [470, 325]
-      });
+      // Create initial PDF instance. Format will be dynamically set page-by-page.
+      let pdf: any = null;
 
       for (let i = 0; i < filteredPeople.length; i++) {
         const person = filteredPeople[i];
@@ -23642,9 +23657,13 @@ const IDCardsModule = ({
           message: `Rendering combined card ${i + 1} of ${filteredPeople.length} (${person.name})...`
         });
 
-        const element = document.getElementById(`card-${person.id || person.studentId}`);
+        // Use isolated single card renderer
+        setRenderingCard(person);
+        await new Promise(resolve => setTimeout(resolve, 150));
+
+        const element = document.getElementById('bulk-render-temp');
         if (!element) {
-          console.warn(`Card element not found for ID: ${person.id || person.studentId}`);
+          console.warn(`Isolated render element not found for card: ${person.name}`);
           continue;
         }
 
@@ -23656,7 +23675,7 @@ const IDCardsModule = ({
             logging: false,
             imageTimeout: 3000,
             backgroundColor: '#ffffff'
-          }, 6000);
+          }, 8000);
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
@@ -23676,42 +23695,56 @@ const IDCardsModule = ({
                 }
               }
             }
-          }, 6000);
+          }, 8000);
         }
         
         const imgData = canvas.toDataURL('image/png');
-        
-        if (i > 0) {
-          pdf.addPage(orientation === 'portrait' ? [325, 470] : [470, 325], orientation === 'portrait' ? 'portrait' : 'landscape');
+        const isLandscape = canvas.width > canvas.height;
+        const pageW = Math.round(canvas.width / 2);
+        const pageH = Math.round(canvas.height / 2);
+
+        if (!pdf) {
+          pdf = new jsPDF({
+            orientation: isLandscape ? 'landscape' : 'portrait',
+            unit: 'px',
+            format: [pageW, pageH]
+          });
+        } else {
+          pdf.addPage([pageW, pageH], isLandscape ? 'landscape' : 'portrait');
         }
 
-        pdf.addImage(imgData, 'PNG', 0, 0, orientation === 'portrait' ? 325 : 470, orientation === 'portrait' ? 470 : 325);
+        pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
 
         // Allow UI to refresh and update rendering progress bar
         await new Promise(resolve => setTimeout(resolve, 30));
       }
 
-      setGenerationProgress({
-        active: true,
-        current: filteredPeople.length,
-        total: filteredPeople.length,
-        message: 'Finalizing and downloading combined PDF document...'
-      });
+      if (pdf) {
+        setGenerationProgress({
+          active: true,
+          current: filteredPeople.length,
+          total: filteredPeople.length,
+          message: 'Finalizing and downloading combined PDF document...'
+        });
 
-      // Standalone standard secure download logic compatible with iframe/sandboxing
-      const blob = pdf.output('blob');
-      const blobUrl = URL.createObjectURL(blob);
-      const downloadLink = document.createElement('a');
-      downloadLink.href = blobUrl;
-      downloadLink.download = `Bulk_${activeTab}_ID_Cards_Combined.pdf`;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-      URL.revokeObjectURL(blobUrl);
+        // Standalone standard secure download logic compatible with iframe/sandboxing
+        const blob = pdf.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = blobUrl;
+        downloadLink.download = `Bulk_${activeTab}_ID_Cards_Combined.pdf`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(blobUrl);
+      } else {
+        alert('Could not generate PDF pages.');
+      }
     } catch (err) {
       console.error('Error during combined PDF generation:', err);
       alert('An error occurred during combined PDF generation. Please try printing or download ZIP instead.');
     } finally {
+      setRenderingCard(null);
       setGenerationProgress(null);
     }
   };
@@ -23744,9 +23777,13 @@ const IDCardsModule = ({
           message: `Generating ${format.toUpperCase()} card ${i + 1} of ${filteredPeople.length} (${person.name})...`
         });
 
-        const element = document.getElementById(`card-${person.id || person.studentId}`);
+        // Use isolated single card renderer
+        setRenderingCard(person);
+        await new Promise(resolve => setTimeout(resolve, 150));
+
+        const element = document.getElementById('bulk-render-temp');
         if (!element) {
-          console.warn(`Card element not found for ID: ${person.id || person.studentId}`);
+          console.warn(`Isolated render element not found for ZIP card: ${person.name}`);
           continue;
         }
 
@@ -23758,7 +23795,7 @@ const IDCardsModule = ({
             logging: false,
             imageTimeout: 3000,
             backgroundColor: '#ffffff'
-          }, 6000);
+          }, 8000);
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
@@ -23778,7 +23815,7 @@ const IDCardsModule = ({
                 }
               }
             }
-          }, 6000);
+          }, 8000);
         }
 
         if (format === 'png') {
@@ -23787,12 +23824,16 @@ const IDCardsModule = ({
           zip.file(fileName, imgData, { base64: true });
         } else {
           const imgData = canvas.toDataURL('image/png');
+          const isLandscape = canvas.width > canvas.height;
+          const pageW = Math.round(canvas.width / 2);
+          const pageH = Math.round(canvas.height / 2);
+
           const pdf = new jsPDF({
-            orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+            orientation: isLandscape ? 'landscape' : 'portrait',
             unit: 'px',
-            format: orientation === 'portrait' ? [325, 470] : [470, 325]
+            format: [pageW, pageH]
           });
-          pdf.addImage(imgData, 'PNG', 0, 0, orientation === 'portrait' ? 325 : 470, orientation === 'portrait' ? 470 : 325);
+          pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
           
           const pdfData = pdf.output('arraybuffer');
           const fileName = `${person.name}_${person.studentId || person.id}.pdf`;
@@ -23821,6 +23862,7 @@ const IDCardsModule = ({
       console.error('Error during bulk ZIP generation:', err);
       alert('An error occurred during ZIP generation.');
     } finally {
+      setRenderingCard(null);
       setGenerationProgress(null);
     }
   };
@@ -24067,7 +24109,7 @@ const IDCardsModule = ({
               <div className="space-y-12">
                 {filteredPeople.map((p: any) => (
                   <div key={p.id} className="flex flex-col items-center">
-                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl">
+                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl flex flex-col items-center">
                       {activeTab === 'student' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} orientation={orientation} template={idTemplate} /></div>}
                       {activeTab === 'teacher' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} type="teacher" orientation={orientation} template={idTemplate} /></div>}
                       {activeTab === 'hostel' && <div id={`card-${p.id || p.studentId}`}><HostelCard student={p} /></div>}
@@ -24083,6 +24125,18 @@ const IDCardsModule = ({
                           />
                         </div>
                       )}
+
+                      {/* Direct Single Card Download Action */}
+                      <div className="mt-6 flex items-center justify-center gap-3 no-print">
+                        <button
+                          onClick={() => handleDownloadPDF(p)}
+                          className="flex items-center gap-2 bg-gradient-to-r from-[#1e293b] to-slate-800 hover:from-slate-800 hover:to-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all shadow-md hover:scale-[1.03] active:scale-[0.97]"
+                          title="Download PDF for this single card"
+                        >
+                          <Download size={14} />
+                          Download PDF
+                        </button>
+                      </div>
                     </div>
                     <div className="w-full border-b-2 border-dashed border-slate-300 my-8 no-print"></div>
                   </div>
@@ -24160,6 +24214,28 @@ const IDCardsModule = ({
             </Card>
           )}
         </div>
+      </div>
+
+      {/* Isolated single card renderer for high-speed PDF generation without DOM bloat */}
+      <div style={{ position: 'absolute', top: '-9999px', left: '-9999px', pointerEvents: 'none' }} className="no-print">
+        {renderingCard && (
+          <div id="bulk-render-temp" className="bg-white p-4 rounded-[32px] inline-block">
+            {activeTab === 'student' && <IDCard person={renderingCard} orientation={orientation} template={idTemplate} />}
+            {activeTab === 'teacher' && <IDCard person={renderingCard} type="teacher" orientation={orientation} template={idTemplate} />}
+            {activeTab === 'hostel' && <HostelCard student={renderingCard} />}
+            {activeTab === 'transfer' && <TransferCertificate student={renderingCard} />}
+            {activeTab === 'migration' && <MigrationCertificate student={renderingCard} />}
+            {activeTab === 'awards' && <AwardCertificate student={renderingCard} />}
+            {activeTab === 'experience' && <ExperienceCertificate staff={renderingCard} />}
+            {activeTab === 'appraisal' && <AppraisalCertificate person={renderingCard} />}
+            {activeTab === 'marksheet' && (
+              <MarkSheet 
+                student={renderingCard} 
+                results={examResults.filter((r: any) => r.studentId === renderingCard.studentId)} 
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
