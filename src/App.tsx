@@ -23558,15 +23558,21 @@ const IDCardsModule = ({
     });
 
     try {
-      setRenderingCard(null);
-      await new Promise(resolve => setTimeout(resolve, 30));
-      setRenderingCard(person);
-      // Wait for React to render the isolated element cleanly
-      await new Promise(resolve => setTimeout(resolve, 250));
+      const cardId = `card-${person.id || person.studentId}`;
+      let element = document.getElementById(cardId);
       
-      const element = document.getElementById('bulk-render-temp');
+      // If the element is not found on screen, we fallback to our high-speed isolated bulk-render-temp slot
       if (!element) {
-        throw new Error('Isolated rendering element not found');
+        setRenderingCard(null);
+        await new Promise(resolve => setTimeout(resolve, 30));
+        setRenderingCard(person);
+        // Wait for React to render the isolated element cleanly
+        await new Promise(resolve => setTimeout(resolve, 250));
+        element = document.getElementById('bulk-render-temp');
+      }
+
+      if (!element) {
+        throw new Error('Card element not found in DOM');
       }
 
       setGenerationProgress({
@@ -24230,7 +24236,7 @@ const IDCardsModule = ({
       </div>
 
       {/* Isolated single card renderer for high-speed PDF generation without DOM bloat */}
-      <div style={{ position: 'fixed', top: '0px', left: '0px', zIndex: -9999, opacity: 0.01, pointerEvents: 'none' }} className="no-print">
+      <div style={{ position: 'fixed', top: '0px', left: '0px', zIndex: -9999, opacity: 1, pointerEvents: 'none' }} className="no-print">
         {renderingCard && (
           <div id="bulk-render-temp" className="bg-white p-4 rounded-[32px] inline-block">
             {activeTab === 'student' && <IDCard person={renderingCard} orientation={orientation} template={idTemplate} />}
