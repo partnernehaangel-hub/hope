@@ -7986,12 +7986,25 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
     if (receiptRef.current) {
       try {
         const element = receiptRef.current;
-        const canvas = await html2canvas(element, {
-          scale: 3, // Higher scale for better clarity on thermal printers
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
+        let canvas;
+        try {
+          canvas = await html2canvas(element, {
+            scale: 3, // Higher scale for better clarity on thermal printers
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          // Verify exportability
+          canvas.toDataURL('image/png');
+        } catch (corsError) {
+          console.warn('CORS html2canvas failed for receipt print, retrying without external images...', corsError);
+          canvas = await html2canvas(element, {
+            scale: 3,
+            useCORS: false,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+        }
         
         const imgData = canvas.toDataURL('image/png');
         const printWindow = window.open('', '_blank');
@@ -8026,26 +8039,43 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
 
   const handleDownloadPDF = async () => {
     if (receiptRef.current) {
-      const canvas = await html2canvas(receiptRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false
-      });
-      const imgData = canvas.toDataURL('image/png');
-      
-      // Determine PDF format based on print size
-      const pdfFormat = printSize === '58mm' ? [164, (canvas.height * 164) / canvas.width] : 'a4';
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'px',
-        format: pdfFormat
-      });
-      
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Receipt_${transaction.invoiceNumber || transaction.id}.pdf`);
+      try {
+        let canvas;
+        try {
+          canvas = await html2canvas(receiptRef.current, {
+            scale: 2,
+            useCORS: true,
+            logging: false
+          });
+          // Verify exportability
+          canvas.toDataURL('image/png');
+        } catch (corsError) {
+          console.warn('CORS html2canvas failed for receipt PDF download, retrying without external images...', corsError);
+          canvas = await html2canvas(receiptRef.current, {
+            scale: 2,
+            useCORS: false,
+            logging: false
+          });
+        }
+        const imgData = canvas.toDataURL('image/png');
+        
+        // Determine PDF format based on print size
+        const pdfFormat = printSize === '58mm' ? [164, (canvas.height * 164) / canvas.width] : 'a4';
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'px',
+          format: pdfFormat
+        });
+        
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Receipt_${transaction.invoiceNumber || transaction.id}.pdf`);
+      } catch (err) {
+        console.error('Error during receipt PDF download:', err);
+        alert('Could not download PDF. Please try printing instead.');
+      }
     }
   };
 
@@ -23229,12 +23259,25 @@ const IDCardsModule = ({
           for (const person of filteredPeople) {
             const element = document.getElementById(`card-${person.id || person.studentId}`);
             if (element) {
-              const canvas = await html2canvas(element, {
-                scale: 3,
-                useCORS: true,
-                logging: false,
-                backgroundColor: '#ffffff'
-              });
+              let canvas;
+              try {
+                canvas = await html2canvas(element, {
+                  scale: 3,
+                  useCORS: true,
+                  logging: false,
+                  backgroundColor: '#ffffff'
+                });
+                // Test if exportable
+                canvas.toDataURL('image/png');
+              } catch (corsError) {
+                console.warn(`CORS print canvas failed for ${person.name}, retrying without external images...`, corsError);
+                canvas = await html2canvas(element, {
+                  scale: 3,
+                  useCORS: false,
+                  logging: false,
+                  backgroundColor: '#ffffff'
+                });
+              }
               const imgData = canvas.toDataURL('image/png');
               printWindow.document.write(`
                 <div class="page-container">
@@ -23269,12 +23312,25 @@ const IDCardsModule = ({
       if (!element) return;
 
       try {
-        const canvas = await html2canvas(element, {
-          scale: 3,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
+        let canvas;
+        try {
+          canvas = await html2canvas(element, {
+            scale: 3,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          // Test if exportable
+          canvas.toDataURL('image/png');
+        } catch (corsError) {
+          console.warn('CORS print single canvas failed, retrying without external images...', corsError);
+          canvas = await html2canvas(element, {
+            scale: 3,
+            useCORS: false,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+        }
         const imgData = canvas.toDataURL('image/png');
         const printWindow = window.open('', '_blank');
         if (printWindow) {
@@ -23309,12 +23365,25 @@ const IDCardsModule = ({
     if (!element) return;
     
     try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
+      let canvas;
+      try {
+        canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        // Test if exportable
+        canvas.toDataURL('image/png');
+      } catch (corsError) {
+        console.warn(`CORS single PDF canvas failed for ${person.name}, retrying without external images...`, corsError);
+        canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: false,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+      }
       const imgData = canvas.toDataURL('image/png');
       const isLandscape = canvas.width > canvas.height;
       const pdf = new jsPDF({
@@ -23356,17 +23425,30 @@ const IDCardsModule = ({
           continue;
         }
 
-        const canvas = await html2canvas(element, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
+        let canvas;
+        try {
+          canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          // Test if exportable
+          canvas.toDataURL('image/png');
+        } catch (corsError) {
+          console.warn(`CORS bulk PDF canvas failed for ${person.name}, retrying without external images...`, corsError);
+          canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: false,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+        }
         
         const imgData = canvas.toDataURL('image/png');
         
         if (i > 0) {
-          pdf.addPage();
+          pdf.addPage(orientation === 'portrait' ? [325, 470] : [470, 325], orientation === 'portrait' ? 'portrait' : 'landscape');
         }
 
         pdf.addImage(imgData, 'PNG', 0, 0, orientation === 'portrait' ? 325 : 470, orientation === 'portrait' ? 470 : 325);
@@ -23401,12 +23483,25 @@ const IDCardsModule = ({
           continue;
         }
 
-        const canvas = await html2canvas(element, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
+        let canvas;
+        try {
+          canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          // Test if exportable
+          canvas.toDataURL('image/png');
+        } catch (corsError) {
+          console.warn(`CORS bulk ZIP canvas failed for ${person.name}, retrying without external images...`, corsError);
+          canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: false,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+        }
 
         if (format === 'png') {
           const imgData = canvas.toDataURL('image/png').split(',')[1];
