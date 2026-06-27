@@ -23269,10 +23269,19 @@ const IDCardsModule = ({
 
   const [bulkMode, setBulkMode] = useState(false);
   const [idTemplate, setIdTemplate] = useState<string>('classic');
+  const [generationProgress, setGenerationProgress] = useState<{ active: boolean; current: number; total: number; message: string } | null>(null);
 
   const handlePrint = async () => {
     if (bulkMode) {
       if (filteredPeople.length === 0) return;
+      
+      setGenerationProgress({
+        active: true,
+        current: 0,
+        total: filteredPeople.length,
+        message: 'Initializing bulk print document...'
+      });
+
       try {
         const iframe = document.createElement('iframe');
         iframe.style.position = 'fixed';
@@ -23286,6 +23295,7 @@ const IDCardsModule = ({
         const iframeDoc = iframe.contentWindow?.document;
         if (!iframeDoc) {
           alert('Could not open print document.');
+          setGenerationProgress(null);
           return;
         }
 
@@ -23313,7 +23323,15 @@ const IDCardsModule = ({
               </div>
         `);
 
-        for (const person of filteredPeople) {
+        for (let i = 0; i < filteredPeople.length; i++) {
+          const person = filteredPeople[i];
+          setGenerationProgress({
+            active: true,
+            current: i + 1,
+            total: filteredPeople.length,
+            message: `Rendering print card ${i + 1} of ${filteredPeople.length} (${person.name})...`
+          });
+
           try {
             const element = document.getElementById(`card-${person.id || person.studentId}`);
             if (element) {
@@ -23328,12 +23346,21 @@ const IDCardsModule = ({
                 // Test if exportable
                 canvas.toDataURL('image/png');
               } catch (corsError) {
-                console.warn(`CORS print canvas failed for ${person.name}, retrying without external images...`, corsError);
+                console.warn(`CORS print canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
                 canvas = await html2canvas(element, {
                   scale: 3,
                   useCORS: false,
                   logging: false,
-                  backgroundColor: '#ffffff'
+                  backgroundColor: '#ffffff',
+                  onclone: (clonedDoc, clonedElement) => {
+                    const images = clonedElement.getElementsByTagName('img');
+                    for (let j = 0; j < images.length; j++) {
+                      const img = images[j];
+                      if (img.src && !img.src.startsWith('data:')) {
+                        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                      }
+                    }
+                  }
                 });
               }
               const imgData = canvas.toDataURL('image/png');
@@ -23346,6 +23373,9 @@ const IDCardsModule = ({
           } catch (cardError) {
             console.error(`Error rendering card for ${person.name}:`, cardError);
           }
+
+          // Let the UI breathe and update the progress bar smoothly
+          await new Promise(resolve => setTimeout(resolve, 30));
         }
 
         iframeDoc.write(`
@@ -23358,16 +23388,25 @@ const IDCardsModule = ({
         `);
         iframeDoc.close();
 
+        setGenerationProgress({
+          active: true,
+          current: filteredPeople.length,
+          total: filteredPeople.length,
+          message: 'Sending to system print dialog...'
+        });
+
         setTimeout(() => {
           iframe.contentWindow?.focus();
           iframe.contentWindow?.print();
           setTimeout(() => {
             document.body.removeChild(iframe);
+            setGenerationProgress(null);
           }, 1000);
         }, 500);
 
       } catch (err) {
         console.error('Error in bulk printing:', err);
+        setGenerationProgress(null);
         window.print();
       }
     } else {
@@ -23375,6 +23414,13 @@ const IDCardsModule = ({
       if (!person) return;
       const element = document.getElementById(`card-${person.id || person.studentId}`);
       if (!element) return;
+
+      setGenerationProgress({
+        active: true,
+        current: 0,
+        total: 1,
+        message: `Preparing print layout for ${person.name}...`
+      });
 
       try {
         const iframe = document.createElement('iframe');
@@ -23389,6 +23435,7 @@ const IDCardsModule = ({
         const iframeDoc = iframe.contentWindow?.document;
         if (!iframeDoc) {
           alert('Could not open print document.');
+          setGenerationProgress(null);
           return;
         }
 
@@ -23403,12 +23450,21 @@ const IDCardsModule = ({
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
-          console.warn('CORS print single canvas failed, retrying without external images...', corsError);
+          console.warn('CORS print single canvas failed, retrying by removing external images to prevent security error...', corsError);
           canvas = await html2canvas(element, {
             scale: 3,
             useCORS: false,
             logging: false,
-            backgroundColor: '#ffffff'
+            backgroundColor: '#ffffff',
+            onclone: (clonedDoc, clonedElement) => {
+              const images = clonedElement.getElementsByTagName('img');
+              for (let j = 0; j < images.length; j++) {
+                const img = images[j];
+                if (img.src && !img.src.startsWith('data:')) {
+                  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                }
+              }
+            }
           });
         }
         const imgData = canvas.toDataURL('image/png');
@@ -23436,11 +23492,13 @@ const IDCardsModule = ({
           iframe.contentWindow?.print();
           setTimeout(() => {
             document.body.removeChild(iframe);
+            setGenerationProgress(null);
           }, 1000);
         }, 500);
 
       } catch (err) {
         console.error('Error printing certificate/card:', err);
+        setGenerationProgress(null);
         window.print();
       }
     }
@@ -23450,6 +23508,13 @@ const IDCardsModule = ({
     const element = document.getElementById(`card-${person.id || person.studentId}`);
     if (!element) return;
     
+    setGenerationProgress({
+      active: true,
+      current: 0,
+      total: 1,
+      message: `Generating high-quality PDF for ${person.name}...`
+    });
+
     try {
       let canvas;
       try {
@@ -23462,12 +23527,21 @@ const IDCardsModule = ({
         // Test if exportable
         canvas.toDataURL('image/png');
       } catch (corsError) {
-        console.warn(`CORS single PDF canvas failed for ${person.name}, retrying without external images...`, corsError);
+        console.warn(`CORS single PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
         canvas = await html2canvas(element, {
           scale: 2,
           useCORS: false,
           logging: false,
-          backgroundColor: '#ffffff'
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc, clonedElement) => {
+            const images = clonedElement.getElementsByTagName('img');
+            for (let j = 0; j < images.length; j++) {
+              const img = images[j];
+              if (img.src && !img.src.startsWith('data:')) {
+                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+              }
+            }
+          }
         });
       }
       const imgData = canvas.toDataURL('image/png');
@@ -23482,6 +23556,8 @@ const IDCardsModule = ({
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Error generating PDF. Please try printing instead.');
+    } finally {
+      setGenerationProgress(null);
     }
   };
 
@@ -23494,7 +23570,12 @@ const IDCardsModule = ({
     const confirmDownload = confirm(`Generate a single combined PDF with ${filteredPeople.length} cards?`);
     if (!confirmDownload) return;
 
-    alert('Generating combined PDF. Please do not close this window...');
+    setGenerationProgress({
+      active: true,
+      current: 0,
+      total: filteredPeople.length,
+      message: `Initializing combined PDF generation for ${filteredPeople.length} cards...`
+    });
 
     try {
       const pdf = new jsPDF({
@@ -23505,6 +23586,13 @@ const IDCardsModule = ({
 
       for (let i = 0; i < filteredPeople.length; i++) {
         const person = filteredPeople[i];
+        setGenerationProgress({
+          active: true,
+          current: i + 1,
+          total: filteredPeople.length,
+          message: `Rendering combined card ${i + 1} of ${filteredPeople.length} (${person.name})...`
+        });
+
         const element = document.getElementById(`card-${person.id || person.studentId}`);
         if (!element) {
           console.warn(`Card element not found for ID: ${person.id || person.studentId}`);
@@ -23522,12 +23610,21 @@ const IDCardsModule = ({
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
-          console.warn(`CORS bulk PDF canvas failed for ${person.name}, retrying without external images...`, corsError);
+          console.warn(`CORS bulk PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
           canvas = await html2canvas(element, {
             scale: 2,
             useCORS: false,
             logging: false,
-            backgroundColor: '#ffffff'
+            backgroundColor: '#ffffff',
+            onclone: (clonedDoc, clonedElement) => {
+              const images = clonedElement.getElementsByTagName('img');
+              for (let j = 0; j < images.length; j++) {
+                const img = images[j];
+                if (img.src && !img.src.startsWith('data:')) {
+                  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                }
+              }
+            }
           });
         }
         
@@ -23538,13 +23635,24 @@ const IDCardsModule = ({
         }
 
         pdf.addImage(imgData, 'PNG', 0, 0, orientation === 'portrait' ? 325 : 470, orientation === 'portrait' ? 470 : 325);
+
+        // Allow UI to refresh and update rendering progress bar
+        await new Promise(resolve => setTimeout(resolve, 30));
       }
 
+      setGenerationProgress({
+        active: true,
+        current: filteredPeople.length,
+        total: filteredPeople.length,
+        message: 'Finalizing and downloading combined PDF document...'
+      });
+
       pdf.save(`Bulk_${activeTab}_ID_Cards_Combined.pdf`);
-      alert('Bulk combined PDF download completed successfully!');
     } catch (err) {
       console.error('Error during combined PDF generation:', err);
       alert('An error occurred during combined PDF generation. Please try printing or download ZIP instead.');
+    } finally {
+      setGenerationProgress(null);
     }
   };
 
@@ -23557,12 +23665,25 @@ const IDCardsModule = ({
     const confirmDownload = confirm(`Generate and package ${filteredPeople.length} individual cards in a ZIP archive?`);
     if (!confirmDownload) return;
 
-    alert(`Generating ${format.toUpperCase()} cards for ZIP package. This might take a moment...`);
+    setGenerationProgress({
+      active: true,
+      current: 0,
+      total: filteredPeople.length,
+      message: `Initializing ZIP package for ${filteredPeople.length} ${format.toUpperCase()} cards...`
+    });
 
     try {
       const zip = new JSZip();
 
-      for (const person of filteredPeople) {
+      for (let i = 0; i < filteredPeople.length; i++) {
+        const person = filteredPeople[i];
+        setGenerationProgress({
+          active: true,
+          current: i + 1,
+          total: filteredPeople.length,
+          message: `Generating ${format.toUpperCase()} card ${i + 1} of ${filteredPeople.length} (${person.name})...`
+        });
+
         const element = document.getElementById(`card-${person.id || person.studentId}`);
         if (!element) {
           console.warn(`Card element not found for ID: ${person.id || person.studentId}`);
@@ -23580,12 +23701,21 @@ const IDCardsModule = ({
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
-          console.warn(`CORS bulk ZIP canvas failed for ${person.name}, retrying without external images...`, corsError);
+          console.warn(`CORS bulk ZIP canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
           canvas = await html2canvas(element, {
             scale: 2,
             useCORS: false,
             logging: false,
-            backgroundColor: '#ffffff'
+            backgroundColor: '#ffffff',
+            onclone: (clonedDoc, clonedElement) => {
+              const images = clonedElement.getElementsByTagName('img');
+              for (let j = 0; j < images.length; j++) {
+                const img = images[j];
+                if (img.src && !img.src.startsWith('data:')) {
+                  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                }
+              }
+            }
           });
         }
 
@@ -23607,8 +23737,15 @@ const IDCardsModule = ({
           zip.file(fileName, pdfData);
         }
 
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 30));
       }
+
+      setGenerationProgress({
+        active: true,
+        current: filteredPeople.length,
+        total: filteredPeople.length,
+        message: 'Packaging and compressing ZIP archive...'
+      });
 
       const zipContent = await zip.generateAsync({ type: 'blob' });
       const downloadLink = document.createElement('a');
@@ -23618,15 +23755,45 @@ const IDCardsModule = ({
       downloadLink.click();
       document.body.removeChild(downloadLink);
 
-      alert('Bulk ZIP archive downloaded successfully!');
     } catch (err) {
       console.error('Error during bulk ZIP generation:', err);
       alert('An error occurred during ZIP generation.');
+    } finally {
+      setGenerationProgress(null);
     }
   };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-20">
+      {/* High-fidelity visual progress modal for document generation */}
+      {generationProgress && generationProgress.active && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[32px] p-8 shadow-2xl max-w-md w-full border border-slate-100 flex flex-col items-center text-center">
+            <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6" />
+            <h3 className="text-xl font-black text-text-heading mb-2">Generating PDF Documents</h3>
+            <p className="text-sm font-bold text-primary mb-6">{generationProgress.message}</p>
+            
+            {generationProgress.total > 0 && (
+              <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden mb-3 relative">
+                <div 
+                  className="bg-gradient-to-r from-primary to-[#0047AB] h-full transition-all duration-300"
+                  style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
+                />
+              </div>
+            )}
+            
+            {generationProgress.total > 0 && (
+              <div className="flex justify-between w-full text-xs font-bold text-text-sub">
+                <span>Progress</span>
+                <span>{generationProgress.current} of {generationProgress.total} cards ({Math.round((generationProgress.current / generationProgress.total) * 100)}%)</span>
+              </div>
+            )}
+            
+            <p className="text-[10px] text-rose-500 font-black uppercase mt-6 tracking-widest animate-pulse">Please do not close or reload this window</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-text-heading tracking-tight">ID Cards & Certificates 🪪</h1>
