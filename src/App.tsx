@@ -8007,29 +8007,52 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
         }
         
         const imgData = canvas.toDataURL('image/png');
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>Receipt - ${transaction.invoiceNumber || transaction.id}</title>
-                <style>
-                  @page { margin: 0; size: auto; }
-                  body { margin: 0; padding: 0; display: flex; justify-content: center; background: white; }
-                  img { width: 100%; max-width: ${printSize === '58mm' ? '58mm' : '100%'}; height: auto; display: block; }
-                  @media print {
-                    body { margin: 0; }
-                    img { width: 100%; }
-                  }
-                </style>
-              </head>
-              <body>
-                <img src="${imgData}" onload="window.print(); window.close();" referrerPolicy="no-referrer" / alt="" />
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
+
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+
+        const iframeDoc = iframe.contentWindow?.document;
+        if (!iframeDoc) {
+          alert('Could not open print document.');
+          return;
         }
+
+        iframeDoc.open();
+        iframeDoc.write(`
+          <html>
+            <head>
+              <title>Receipt - ${transaction.invoiceNumber || transaction.id}</title>
+              <style>
+                @page { margin: 0; size: auto; }
+                body { margin: 0; padding: 0; display: flex; justify-content: center; background: white; }
+                img { width: 100%; max-width: ${printSize === '58mm' ? '58mm' : '100%'}; height: auto; display: block; margin: 0 auto; }
+                @media print {
+                  body { margin: 0; }
+                  img { width: 100%; }
+                }
+              </style>
+            </head>
+            <body>
+              <img src="${imgData}" referrerPolicy="no-referrer" alt="" />
+            </body>
+          </html>
+        `);
+        iframeDoc.close();
+
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 1000);
+        }, 500);
+
       } catch (err) {
         console.error('Error during image printing:', err);
         window.print(); // Fallback to standard print
@@ -19195,44 +19218,61 @@ const schoolMigrations = `
                               return;
                             }
                             
-                            const printWindow = window.open('', '_blank');
-                            if (printWindow) {
-                              printWindow.document.write('<html><head><title>Print Certificates</title>');
-                              printWindow.document.write('<style>body { font-family: sans-serif; padding: 40px; } .cert { margin-bottom: 50px; page-break-after: always; text-align: center; border: 10px double #1e293b; padding: 40px; position: relative; } .cert::after { content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid #1e293b; margin: 5px; pointer-events: none; } img { max-width: 100%; height: auto; border: 1px solid #ccc; margin-top: 20px; } h1 { color: #1e293b; font-size: 32px; margin-bottom: 10px; } h2 { color: #64748b; font-size: 24px; margin-bottom: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; } .details { text-align: left; margin-bottom: 30px; display: grid; grid-template-cols: 1fr 1fr; gap: 20px; } .detail-item { font-size: 14px; } .detail-label { font-weight: bold; color: #475569; } .footer { margin-top: 50px; display: flex; justify-content: space-between; font-weight: bold; }</style>');
-                              printWindow.document.write('</head><body>');
+                            const iframe = document.createElement('iframe');
+                            iframe.style.position = 'fixed';
+                            iframe.style.right = '0';
+                            iframe.style.bottom = '0';
+                            iframe.style.width = '0';
+                            iframe.style.height = '0';
+                            iframe.style.border = '0';
+                            document.body.appendChild(iframe);
+
+                            const iframeDoc = iframe.contentWindow?.document;
+                            if (iframeDoc) {
+                              iframeDoc.open();
+                              iframeDoc.write('<html><head><title>Print Certificates</title>');
+                              iframeDoc.write('<style>body { font-family: sans-serif; padding: 40px; } .cert { margin-bottom: 50px; page-break-after: always; text-align: center; border: 10px double #1e293b; padding: 40px; position: relative; } .cert::after { content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid #1e293b; margin: 5px; pointer-events: none; } img { max-width: 100%; height: auto; border: 1px solid #ccc; margin-top: 20px; } h1 { color: #1e293b; font-size: 32px; margin-bottom: 10px; } h2 { color: #64748b; font-size: 24px; margin-bottom: 30px; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; } .details { text-align: left; margin-bottom: 30px; display: grid; grid-template-cols: 1fr 1fr; gap: 20px; } .detail-item { font-size: 14px; } .detail-label { font-weight: bold; color: #475569; } .footer { margin-top: 50px; display: flex; justify-content: space-between; font-weight: bold; }</style>');
+                              iframeDoc.write('</head><body>');
                               
                               documents.forEach((doc: any) => {
-                                printWindow.document.write('<div class="cert">');
-                                printWindow.document.write('<h1>SCHOOL MANAGEMENT SYSTEM</h1>');
-                                printWindow.document.write(`<h2>${doc.name.toUpperCase()}</h2>`);
+                                iframeDoc.write('<div class="cert">');
+                                iframeDoc.write('<h1>SCHOOL MANAGEMENT SYSTEM</h1>');
+                                iframeDoc.write(`<h2>${doc.name.toUpperCase()}</h2>`);
                                 
-                                printWindow.document.write('<div class="details">');
-                                printWindow.document.write(`<div class="detail-item"><span class="detail-label">Student Name:</span> ${formData.name || ''} ${formData.surname || ''}</div>`);
-                                printWindow.document.write(`<div class="detail-item"><span class="detail-label">Student ID:</span> ${formData.studentId || 'N/A'}</div>`);
-                                printWindow.document.write(`<div class="detail-item"><span class="detail-label">Class/Section:</span> ${formData.class || ''} - ${formData.section || ''}</div>`);
-                                printWindow.document.write(`<div class="detail-item"><span class="detail-label">Father's Name:</span> ${formData.fatherName || ''}</div>`);
-                                printWindow.document.write(`<div class="detail-item"><span class="detail-label">Mother's Name:</span> ${formData.motherName || ''}</div>`);
-                                printWindow.document.write(`<div class="detail-item"><span class="detail-label">Residential Address:</span> ${formData.residentialAddress || formData.address || ''}</div>`);
-                                printWindow.document.write(`<div class="detail-item"><span class="detail-label">Aadhaar Number:</span> ${formData.aadhaarNumber || 'N/A'}</div>`);
-                                printWindow.document.write('</div>');
+                                iframeDoc.write('<div class="details">');
+                                iframeDoc.write(`<div class="detail-item"><span class="detail-label">Student Name:</span> ${formData.name || ''} ${formData.surname || ''}</div>`);
+                                iframeDoc.write(`<div class="detail-item"><span class="detail-label">Student ID:</span> ${formData.studentId || 'N/A'}</div>`);
+                                iframeDoc.write(`<div class="detail-item"><span class="detail-label">Class/Section:</span> ${formData.class || ''} - ${formData.section || ''}</div>`);
+                                iframeDoc.write(`<div class="detail-item"><span class="detail-label">Father's Name:</span> ${formData.fatherName || ''}</div>`);
+                                iframeDoc.write(`<div class="detail-item"><span class="detail-label">Mother's Name:</span> ${formData.motherName || ''}</div>`);
+                                iframeDoc.write(`<div class="detail-item"><span class="detail-label">Residential Address:</span> ${formData.residentialAddress || formData.address || ''}</div>`);
+                                iframeDoc.write(`<div class="detail-item"><span class="detail-label">Aadhaar Number:</span> ${formData.aadhaarNumber || 'N/A'}</div>`);
+                                iframeDoc.write('</div>');
 
                                 if (doc.file.startsWith('data:image')) {
-                                  printWindow.document.write(`<img src="${doc.file}" referrerPolicy="no-referrer" / alt="" />`);
+                                  iframeDoc.write(`<img src="${doc.file}" referrerPolicy="no-referrer" / alt="" />`);
                                 } else {
-                                  printWindow.document.write(`<div style="padding: 100px; border: 1px dashed #ccc; margin-top: 20px;">Document: ${doc.name}</div>`);
+                                  iframeDoc.write(`<div style="padding: 100px; border: 1px dashed #ccc; margin-top: 20px;">Document: ${doc.name}</div>`);
                                 }
                                 
-                                printWindow.document.write('<div class="footer">');
-                                printWindow.document.write('<div>Parent Signature</div>');
-                                printWindow.document.write('<div>Principal Signature</div>');
-                                printWindow.document.write('</div>');
+                                iframeDoc.write('<div class="footer">');
+                                iframeDoc.write('<div>Parent Signature</div>');
+                                iframeDoc.write('<div>Principal Signature</div>');
+                                iframeDoc.write('</div>');
                                 
-                                printWindow.document.write('</div>');
+                                iframeDoc.write('</div>');
                               });
                               
-                              printWindow.document.write('</body></html>');
-                              printWindow.document.close();
-                              printWindow.print();
+                              iframeDoc.write('</body></html>');
+                              iframeDoc.close();
+
+                              setTimeout(() => {
+                                iframe.contentWindow?.focus();
+                                iframe.contentWindow?.print();
+                                setTimeout(() => {
+                                  document.body.removeChild(iframe);
+                                }, 1000);
+                              }, 500);
                             }
                           }}
                           className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all flex items-center gap-2 relative z-20"
@@ -23234,29 +23274,47 @@ const IDCardsModule = ({
     if (bulkMode) {
       if (filteredPeople.length === 0) return;
       try {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>Bulk Print Documents</title>
-                <style>
-                  @page { margin: 0; size: auto; }
-                  body { margin: 0; padding: 0; background: white; }
-                  .page-container { 
-                    display: flex; 
-                    justify-content: center; 
-                    align-items: center; 
-                    min-height: 100vh; 
-                    page-break-after: always; 
-                  }
-                  img { max-width: 100%; max-height: 100vh; height: auto; display: block; }
-                </style>
-              </head>
-              <body>
-          `);
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
 
-          for (const person of filteredPeople) {
+        const iframeDoc = iframe.contentWindow?.document;
+        if (!iframeDoc) {
+          alert('Could not open print document.');
+          return;
+        }
+
+        iframeDoc.open();
+        iframeDoc.write(`
+          <html>
+            <head>
+              <title>Bulk Print Documents</title>
+              <style>
+                @page { margin: 0; size: auto; }
+                body { margin: 0; padding: 0; background: white; }
+                .page-container { 
+                  display: flex; 
+                  justify-content: center; 
+                  align-items: center; 
+                  min-height: 100vh; 
+                  page-break-after: always; 
+                }
+                img { max-width: 100%; max-height: 100vh; height: auto; display: block; margin: 0 auto; }
+              </style>
+            </head>
+            <body>
+              <div id="loader" style="font-family: sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; color: #475569;">
+                <p style="font-weight: 600;">Generating printable cards, please wait...</p>
+              </div>
+        `);
+
+        for (const person of filteredPeople) {
+          try {
             const element = document.getElementById(`card-${person.id || person.studentId}`);
             if (element) {
               let canvas;
@@ -23279,28 +23337,35 @@ const IDCardsModule = ({
                 });
               }
               const imgData = canvas.toDataURL('image/png');
-              printWindow.document.write(`
+              iframeDoc.write(`
                 <div class="page-container">
-                  <img src="${imgData}" referrerPolicy="no-referrer" / alt="" />
+                  <img src="${imgData}" referrerPolicy="no-referrer" alt="" />
                 </div>
               `);
             }
+          } catch (cardError) {
+            console.error(`Error rendering card for ${person.name}:`, cardError);
           }
-
-          printWindow.document.write(`
-                <script>
-                  window.onload = function() {
-                    window.print();
-                    window.close();
-                  };
-                </script>
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
-        } else {
-          window.print();
         }
+
+        iframeDoc.write(`
+              <script>
+                const loader = document.getElementById('loader');
+                if (loader) loader.style.display = 'none';
+              </script>
+            </body>
+          </html>
+        `);
+        iframeDoc.close();
+
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 1000);
+        }, 500);
+
       } catch (err) {
         console.error('Error in bulk printing:', err);
         window.print();
@@ -23312,6 +23377,21 @@ const IDCardsModule = ({
       if (!element) return;
 
       try {
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+
+        const iframeDoc = iframe.contentWindow?.document;
+        if (!iframeDoc) {
+          alert('Could not open print document.');
+          return;
+        }
+
         let canvas;
         try {
           canvas = await html2canvas(element, {
@@ -23332,27 +23412,33 @@ const IDCardsModule = ({
           });
         }
         const imgData = canvas.toDataURL('image/png');
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>Print Document - ${person.name}</title>
-                <style>
-                  @page { margin: 0; size: auto; }
-                  body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
-                  img { max-width: 100%; max-height: 100vh; height: auto; display: block; }
-                </style>
-              </head>
-              <body>
-                <img src="${imgData}" onload="window.print(); window.close();" referrerPolicy="no-referrer" / alt="" />
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
-        } else {
-          window.print();
-        }
+
+        iframeDoc.open();
+        iframeDoc.write(`
+          <html>
+            <head>
+              <title>Print Document - ${person.name}</title>
+              <style>
+                @page { margin: 0; size: auto; }
+                body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
+                img { max-width: 100%; max-height: 100vh; height: auto; display: block; margin: 0 auto; }
+              </style>
+            </head>
+            <body>
+              <img src="${imgData}" referrerPolicy="no-referrer" alt="" />
+            </body>
+          </html>
+        `);
+        iframeDoc.close();
+
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 1000);
+        }, 500);
+
       } catch (err) {
         console.error('Error printing certificate/card:', err);
         window.print();
