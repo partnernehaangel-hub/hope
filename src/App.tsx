@@ -22669,8 +22669,8 @@ const IDCardsModule = ({
           { label: 'CONTACT NO.', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
         ];
 
-    const headerHeight = orientation === 'portrait' ? 'h-[165px]' : 'h-[135px]';
-    const headerPt = orientation === 'portrait' ? 'pt-7' : 'pt-5';
+    const headerHeight = orientation === 'portrait' ? 'h-[175px]' : 'h-[145px]';
+    const headerPt = orientation === 'portrait' ? 'pt-10' : 'pt-8';
 
     return (
       <div className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl overflow-hidden flex flex-col relative font-sans border ${cardBorderClass} mx-auto rounded-2xl`}>
@@ -23367,7 +23367,12 @@ const IDCardsModule = ({
           });
 
           try {
-            const element = document.getElementById(`card-${person.id || person.studentId}`);
+            setRenderingCard(null);
+            await new Promise(resolve => setTimeout(resolve, 30));
+            setRenderingCard(person);
+            await new Promise(resolve => setTimeout(resolve, 250));
+
+            const element = document.getElementById('bulk-render-temp');
             if (element) {
               let canvas;
               try {
@@ -23377,7 +23382,7 @@ const IDCardsModule = ({
                   logging: false,
                   imageTimeout: 3000,
                   backgroundColor: '#ffffff'
-                }, 6000);
+                }, 8000);
                 // Test if exportable
                 canvas.toDataURL('image/png');
               } catch (corsError) {
@@ -23397,7 +23402,7 @@ const IDCardsModule = ({
                       }
                     }
                   }
-                }, 6000);
+                }, 8000);
               }
               const imgData = canvas.toDataURL('image/png');
               iframeDoc.write(`
@@ -23436,12 +23441,14 @@ const IDCardsModule = ({
           iframe.contentWindow?.print();
           setTimeout(() => {
             document.body.removeChild(iframe);
+            setRenderingCard(null);
             setGenerationProgress(null);
           }, 1000);
         }, 500);
 
       } catch (err) {
         console.error('Error in bulk printing:', err);
+        setRenderingCard(null);
         setGenerationProgress(null);
         window.print();
       }
@@ -23551,9 +23558,11 @@ const IDCardsModule = ({
     });
 
     try {
+      setRenderingCard(null);
+      await new Promise(resolve => setTimeout(resolve, 30));
       setRenderingCard(person);
-      // Wait for React to render the isolated element
-      await new Promise(resolve => setTimeout(resolve, 150));
+      // Wait for React to render the isolated element cleanly
+      await new Promise(resolve => setTimeout(resolve, 250));
       
       const element = document.getElementById('bulk-render-temp');
       if (!element) {
@@ -23658,8 +23667,10 @@ const IDCardsModule = ({
         });
 
         // Use isolated single card renderer
+        setRenderingCard(null);
+        await new Promise(resolve => setTimeout(resolve, 30));
         setRenderingCard(person);
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise(resolve => setTimeout(resolve, 250));
 
         const element = document.getElementById('bulk-render-temp');
         if (!element) {
@@ -23778,8 +23789,10 @@ const IDCardsModule = ({
         });
 
         // Use isolated single card renderer
+        setRenderingCard(null);
+        await new Promise(resolve => setTimeout(resolve, 30));
         setRenderingCard(person);
-        await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise(resolve => setTimeout(resolve, 250));
 
         const element = document.getElementById('bulk-render-temp');
         if (!element) {
@@ -24217,7 +24230,7 @@ const IDCardsModule = ({
       </div>
 
       {/* Isolated single card renderer for high-speed PDF generation without DOM bloat */}
-      <div style={{ position: 'absolute', top: '-9999px', left: '-9999px', pointerEvents: 'none' }} className="no-print">
+      <div style={{ position: 'fixed', top: '0px', left: '0px', zIndex: -9999, opacity: 0.01, pointerEvents: 'none' }} className="no-print">
         {renderingCard && (
           <div id="bulk-render-temp" className="bg-white p-4 rounded-[32px] inline-block">
             {activeTab === 'student' && <IDCard person={renderingCard} orientation={orientation} template={idTemplate} />}
