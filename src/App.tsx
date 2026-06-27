@@ -23558,64 +23558,87 @@ const IDCardsModule = ({
     });
 
     try {
-      const cardId = `card-${person.id || person.studentId}`;
-      let element = document.getElementById(cardId);
+      // ALWAYS use the clean isolated bulk-render-temp slot to avoid parent transforms and on-screen UI interference
+      setRenderingCard(null);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      setRenderingCard(person);
+      // Wait for React to render the isolated element cleanly
+      await new Promise(resolve => setTimeout(resolve, 300));
       
-      // If the element is not found on screen, we fallback to our high-speed isolated bulk-render-temp slot
+      const element = document.getElementById('bulk-render-temp');
       if (!element) {
-        setRenderingCard(null);
-        await new Promise(resolve => setTimeout(resolve, 30));
-        setRenderingCard(person);
-        // Wait for React to render the isolated element cleanly
-        await new Promise(resolve => setTimeout(resolve, 250));
-        element = document.getElementById('bulk-render-temp');
-      }
-
-      if (!element) {
-        throw new Error('Card element not found in DOM');
+        throw new Error('Isolated rendering element not found');
       }
 
       setGenerationProgress({
         active: true,
         current: 1,
         total: 1,
-        message: `Generating high-quality PDF for ${person.name || 'document'}...`
+        message: `Generating PDF for ${person.name || 'document'}...`
       });
 
+      // We use a safe scale of 2 (perfect balance of high resolution and fast rendering speed)
       let canvas;
       try {
         canvas = await html2canvasWithTimeout(element, {
-          scale: 2.5, // slightly higher scale for ultra sharp single PDF
+          scale: 2,
           useCORS: true,
           logging: false,
-          imageTimeout: 3000,
-          backgroundColor: '#ffffff'
-        }, 8000);
-        // Test if exportable
+          imageTimeout: 5000,
+          backgroundColor: '#ffffff',
+          allowTaint: false,
+        }, 12000);
+        // Test if canvas is exportable
         canvas.toDataURL('image/png');
       } catch (corsError) {
-        console.warn(`CORS single PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
+        console.warn(`CORS or rendering issue, retrying with useCORS: false and placeholder images to guarantee PDF generation...`, corsError);
+        // Fallback: render without CORS, and replace any non-local images with transparent placeholder to guarantee exportability
         canvas = await html2canvasWithTimeout(element, {
-          scale: 2.5,
+          scale: 2,
           useCORS: false,
           logging: false,
-          imageTimeout: 3000,
+          imageTimeout: 5000,
           backgroundColor: '#ffffff',
+          allowTaint: true, // Allow taint so rendering doesn't fail, but we replace images to prevent security errors
           onclone: (clonedDoc, clonedElement) => {
             const images = clonedElement.getElementsByTagName('img');
             for (let j = 0; j < images.length; j++) {
               const img = images[j];
               if (img.src && !img.src.startsWith('data:')) {
+                // Inline transparent 1x1 GIF placeholder
                 img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                img.removeAttribute('srcset');
               }
             }
           }
-        }, 8000);
+        }, 12000);
       }
-      const imgData = canvas.toDataURL('image/png');
+
+      // Safe export check with a secondary fallback to blank canvas if somehow still tainted
+      let imgData;
+      try {
+        imgData = canvas.toDataURL('image/png');
+      } catch (exportError) {
+        console.error('Canvas still tainted, rendering a simplified plain document to avoid crashing...', exportError);
+        // Re-generate using absolutely clean layout to ensure download never fails
+        canvas = await html2canvasWithTimeout(element, {
+          scale: 1.5,
+          useCORS: false,
+          logging: false,
+          backgroundColor: '#ffffff',
+          onclone: (clonedDoc, clonedElement) => {
+            const images = clonedElement.getElementsByTagName('img');
+            for (let j = 0; j < images.length; j++) {
+              images[j].style.display = 'none'; // Hide images to guarantee clean export
+            }
+          }
+        }, 10000);
+        imgData = canvas.toDataURL('image/png');
+      }
+
       const isLandscape = canvas.width > canvas.height;
-      const pdfW = Math.round(canvas.width / 2.5);
-      const pdfH = Math.round(canvas.height / 2.5);
+      const pdfW = Math.round(canvas.width / 2);
+      const pdfH = Math.round(canvas.height / 2);
       
       const pdf = new jsPDF({
         orientation: isLandscape ? 'landscape' : 'portrait',
@@ -23690,9 +23713,10 @@ const IDCardsModule = ({
             scale: 2,
             useCORS: true,
             logging: false,
-            imageTimeout: 3000,
-            backgroundColor: '#ffffff'
-          }, 8000);
+            imageTimeout: 5000,
+            backgroundColor: '#ffffff',
+            allowTaint: false,
+          }, 12000);
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
@@ -23701,21 +23725,42 @@ const IDCardsModule = ({
             scale: 2,
             useCORS: false,
             logging: false,
-            imageTimeout: 3000,
+            imageTimeout: 5000,
             backgroundColor: '#ffffff',
+            allowTaint: true,
             onclone: (clonedDoc, clonedElement) => {
               const images = clonedElement.getElementsByTagName('img');
               for (let j = 0; j < images.length; j++) {
                 const img = images[j];
                 if (img.src && !img.src.startsWith('data:')) {
                   img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                  img.removeAttribute('srcset');
                 }
               }
             }
-          }, 8000);
+          }, 12000);
         }
         
-        const imgData = canvas.toDataURL('image/png');
+        let imgData;
+        try {
+          imgData = canvas.toDataURL('image/png');
+        } catch (exportError) {
+          console.error('Canvas still tainted in bulk, rendering without images...', exportError);
+          canvas = await html2canvasWithTimeout(element, {
+            scale: 1.5,
+            useCORS: false,
+            logging: false,
+            backgroundColor: '#ffffff',
+            onclone: (clonedDoc, clonedElement) => {
+              const images = clonedElement.getElementsByTagName('img');
+              for (let j = 0; j < images.length; j++) {
+                images[j].style.display = 'none';
+              }
+            }
+          }, 10000);
+          imgData = canvas.toDataURL('image/png');
+        }
+        
         const isLandscape = canvas.width > canvas.height;
         const pageW = Math.round(canvas.width / 2);
         const pageH = Math.round(canvas.height / 2);
@@ -23812,9 +23857,10 @@ const IDCardsModule = ({
             scale: 2,
             useCORS: true,
             logging: false,
-            imageTimeout: 3000,
-            backgroundColor: '#ffffff'
-          }, 8000);
+            imageTimeout: 5000,
+            backgroundColor: '#ffffff',
+            allowTaint: false,
+          }, 12000);
           // Test if exportable
           canvas.toDataURL('image/png');
         } catch (corsError) {
@@ -23823,26 +23869,47 @@ const IDCardsModule = ({
             scale: 2,
             useCORS: false,
             logging: false,
-            imageTimeout: 3000,
+            imageTimeout: 5000,
             backgroundColor: '#ffffff',
+            allowTaint: true,
             onclone: (clonedDoc, clonedElement) => {
               const images = clonedElement.getElementsByTagName('img');
               for (let j = 0; j < images.length; j++) {
                 const img = images[j];
                 if (img.src && !img.src.startsWith('data:')) {
                   img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                  img.removeAttribute('srcset');
                 }
               }
             }
-          }, 8000);
+          }, 12000);
+        }
+
+        let imgData;
+        try {
+          imgData = canvas.toDataURL('image/png');
+        } catch (exportError) {
+          console.error('Canvas still tainted in bulk ZIP, rendering without images...', exportError);
+          canvas = await html2canvasWithTimeout(element, {
+            scale: 1.5,
+            useCORS: false,
+            logging: false,
+            backgroundColor: '#ffffff',
+            onclone: (clonedDoc, clonedElement) => {
+              const images = clonedElement.getElementsByTagName('img');
+              for (let j = 0; j < images.length; j++) {
+                images[j].style.display = 'none';
+              }
+            }
+          }, 10000);
+          imgData = canvas.toDataURL('image/png');
         }
 
         if (format === 'png') {
-          const imgData = canvas.toDataURL('image/png').split(',')[1];
+          const rawPng = imgData.split(',')[1];
           const fileName = `${person.name}_${person.studentId || person.id}.png`;
-          zip.file(fileName, imgData, { base64: true });
+          zip.file(fileName, rawPng, { base64: true });
         } else {
-          const imgData = canvas.toDataURL('image/png');
           const isLandscape = canvas.width > canvas.height;
           const pageW = Math.round(canvas.width / 2);
           const pageH = Math.round(canvas.height / 2);
