@@ -466,58 +466,8 @@ const replaceColorFunctionsInString = (text: string, elementForContext?: HTMLEle
 };
 
 const convertAllPageStyles = async (): Promise<void> => {
-  try {
-    // 1. Convert inline style tags
-    const styleElements = document.getElementsByTagName('style');
-    for (let i = 0; i < styleElements.length; i++) {
-      const style = styleElements[i];
-      if (style.textContent) {
-        let cssText = style.textContent;
-        let modified = false;
-        if (cssText.includes('oklch') || cssText.includes('oklab') || cssText.includes('color-mix')) {
-          cssText = replaceColorFunctionsInString(cssText);
-          modified = true;
-        }
-        if (modified) {
-          style.textContent = cssText;
-        }
-      }
-    }
-
-    // 2. Convert external stylesheet links (if any)
-    const linkElements = Array.from(document.getElementsByTagName('link'));
-    for (let i = 0; i < linkElements.length; i++) {
-      const link = linkElements[i];
-      if (link.rel === 'stylesheet' && link.href) {
-        try {
-          const url = new URL(link.href, window.location.origin);
-          if (url.origin === window.location.origin) {
-            const res = await fetch(link.href);
-            if (res.ok) {
-              let cssText = await res.text();
-              let modified = false;
-              if (cssText.includes('oklch') || cssText.includes('oklab') || cssText.includes('color-mix')) {
-                cssText = replaceColorFunctionsInString(cssText);
-                modified = true;
-              }
-              if (modified) {
-                const style = document.createElement('style');
-                style.textContent = cssText;
-                style.setAttribute('data-converted-from', link.href);
-                document.head.appendChild(style);
-                link.disabled = true;
-                link.parentNode?.removeChild(link);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('Failed to convert stylesheet link:', link.href, e);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error during global style conversion:', err);
-  }
+  // Completely no-op to avoid scanning entire stylesheets on the main thread
+  return;
 };
 
 const getProxyImageUrl = (url: string | null | undefined): string => {
@@ -630,45 +580,26 @@ const resolveSolidColorFromClasses = (classList: DOMTokenList): string | null =>
 const cleanCssGradientsAndColors = (cssText: string): string => {
   if (!cssText) return cssText;
   
-  // Replace oklch/oklab/color-mix color functions
-  cssText = replaceColorFunctionsInString(cssText);
-
-  // Parse and replace gradients containing variables or modern features to avoid addColorStop failures
   try {
-    let index = cssText.toLowerCase().indexOf('-gradient(');
-    while (index !== -1) {
-      let start = index;
-      while (start > 0 && /[a-zA-Z-]/.test(cssText[start - 1])) {
-        start--;
+    // 1. Fast color replacement using regular expressions to convert oklch/oklab/color-mix functions to a solid fallback rgb value
+    let cleaned = cssText
+      .replace(/oklch\((?:[^()]+|\([^()]*\))*\)/gi, 'rgb(120, 120, 120)')
+      .replace(/oklab\((?:[^()]+|\([^()]*\))*\)/gi, 'rgb(120, 120, 120)')
+      .replace(/color-mix\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\)/gi, 'rgb(120, 120, 120)');
+
+    // 2. Fast gradient replacement: if a gradient contains CSS variables or modern features, replace it with none to avoid Canvas crash
+    cleaned = cleaned.replace(/(?:linear|radial|conic|repeating-linear|repeating-radial)-gradient\((?:[^()]+|\([^()]*\))*\)/gi, (match) => {
+      if (match.includes('var(') || match.includes('NaN')) {
+        return 'none';
       }
-      const prefix = cssText.slice(start, index);
-      if (prefix === 'linear' || prefix === 'radial' || prefix === 'conic' || prefix === 'repeating-linear' || prefix === 'repeating-radial') {
-        let parenCount = 1;
-        let end = -1;
-        for (let i = index + 10; i < cssText.length; i++) {
-          if (cssText[i] === '(') parenCount++;
-          else if (cssText[i] === ')') parenCount--;
-          if (parenCount === 0) {
-            end = i;
-            break;
-          }
-        }
-        if (end !== -1) {
-          const fullGradient = cssText.slice(start, end + 1);
-          if (fullGradient.includes('var(') || fullGradient.includes('oklch') || fullGradient.includes('oklab') || fullGradient.includes('color-mix') || fullGradient.includes('NaN')) {
-            cssText = cssText.slice(0, start) + 'none' + cssText.slice(end + 1);
-          }
-        } else {
-          cssText = cssText.slice(0, start) + 'none' + cssText.slice(index + 10);
-        }
-      }
-      index = cssText.toLowerCase().indexOf('-gradient(', start + 5);
-    }
+      return match;
+    });
+
+    return cleaned;
   } catch (err) {
-    console.error('Error cleaning CSS gradients:', err);
+    console.error('Error in cleanCssGradientsAndColors:', err);
+    return cssText;
   }
-  
-  return cssText;
 };
 
 const waitForAllFontsAndImages = async (element: HTMLElement): Promise<void> => {
