@@ -343,7 +343,7 @@ const parseColorToRgba = (colorStr: string): [number, number, number, number] =>
 const convertColorMixStringToRgb = (colorMixStr: string): string => {
   try {
     const match = colorMixStr.match(/color-mix\(\s*in\s+([a-zA-Z0-9-]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/i);
-    if (!match) return colorMixStr;
+    if (!match) return 'rgb(120, 120, 120)';
     
     const part1 = match[2].trim();
     const part2 = match[3].trim();
@@ -401,22 +401,7 @@ const convertColorMixStringToRgb = (colorMixStr: string): string => {
   }
 };
 
-const resolveColorToRgbOrRgba = (colorStr: string, elementForContext?: HTMLElement): string => {
-  try {
-    const temp = document.createElement('div');
-    temp.style.color = colorStr;
-    const parent = elementForContext || document.body || document.documentElement;
-    parent.appendChild(temp);
-    const computed = window.getComputedStyle(temp).color;
-    parent.removeChild(temp);
-    
-    if (computed && (computed.startsWith('rgb') || computed.startsWith('rgba')) && !computed.includes('NaN')) {
-      return computed;
-    }
-  } catch (e) {
-    // ignore
-  }
-  
+const resolveColorToRgbOrRgba = (colorStr: string, _elementForContext?: HTMLElement): string => {
   const lower = colorStr.toLowerCase();
   if (lower.includes('oklch')) {
     return convertOklchStringToRgb(colorStr);
