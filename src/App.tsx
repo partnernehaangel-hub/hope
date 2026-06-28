@@ -698,13 +698,18 @@ const waitForAllFontsAndImages = async (element: HTMLElement): Promise<void> => 
   try {
     const images = Array.from(element.getElementsByTagName('img'));
     const loadPromises = images.map(img => {
-      if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
+      if (img.complete) return Promise.resolve();
       return new Promise<void>((resolve) => {
         img.onload = () => resolve();
         img.onerror = () => resolve();
+        setTimeout(() => resolve(), 3000); // 3 seconds per image timeout fallback
       });
     });
-    await Promise.all(loadPromises);
+    // Overall images load wait capped to 5 seconds max
+    await Promise.race([
+      Promise.all(loadPromises),
+      new Promise<void>(resolve => setTimeout(resolve, 5000))
+    ]);
   } catch (e) {
     console.warn('Failed to wait for images load:', e);
   }
@@ -719,13 +724,6 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
     await inlineAllImagesInElement(element);
   } catch (err) {
     console.warn('Failed to inline images in element before html2canvas:', err);
-  }
-
-  // Clean all style sheets from oklch, oklab, color-mix and invalid gradients dynamically before html2canvas parses document stylesheets
-  try {
-    await convertAllPageStyles();
-  } catch (err) {
-    console.error('Failed to pre-convert page styles to RGB:', err);
   }
 
   const finalTimeoutMs = Math.max(timeoutMs, 15000);
@@ -23988,300 +23986,63 @@ const IDCardsModule = ({
 
   const [bulkMode, setBulkMode] = useState(false);
   const [idTemplate, setIdTemplate] = useState<string>('classic');
-  const [generationProgress, setGenerationProgress] = useState<{ active: boolean; current: number; total: number; message: string } | null>(null);
-  const [renderingCard, setRenderingCard] = useState<any | null>(null);
+  const [printPeople, setPrintPeople] = useState<any[] | null>(null);
 
-  const handlePrint = async () => {
-    if (bulkMode) {
-      if (filteredPeople.length === 0) return;
-      
-      setGenerationProgress({
-        active: true,
-        current: 0,
-        total: filteredPeople.length,
-        message: 'Initializing bulk print document...'
-      });
-
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        document.body.appendChild(iframe);
-
-        const iframeDoc = iframe.contentWindow?.document;
-        if (!iframeDoc) {
-          alert('Could not open print document.');
-          setGenerationProgress(null);
-          return;
-        }
-
-        iframeDoc.open();
-        iframeDoc.write(`
-          <html>
-            <head>
-              <title>Bulk Print Documents</title>
-              <style>
-                @page { margin: 0; size: auto; }
-                body { margin: 0; padding: 0; background: white; }
-                .page-container { 
-                  display: flex; 
-                  justify-content: center; 
-                  align-items: center; 
-                  min-height: 100vh; 
-                  page-break-after: always; 
-                }
-                img { max-width: 100%; max-height: 100vh; height: auto; display: block; margin: 0 auto; }
-              </style>
-            </head>
-            <body>
-              <div id="loader" style="font-family: sans-serif; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; color: #475569;">
-                <p style="font-weight: 600;">Generating printable cards, please wait...</p>
-              </div>
-        `);
-
-        for (let i = 0; i < filteredPeople.length; i++) {
-          const person = filteredPeople[i];
-          setGenerationProgress({
-            active: true,
-            current: i + 1,
-            total: filteredPeople.length,
-            message: `Rendering print card ${i + 1} of ${filteredPeople.length} (${person.name})...`
-          });
-
-          try {
-            setRenderingCard(null);
-            await new Promise(resolve => setTimeout(resolve, 30));
-            setRenderingCard(person);
-            await new Promise(resolve => setTimeout(resolve, 250));
-
-            const element = document.getElementById('bulk-render-temp');
-            if (element) {
-              let canvas;
-              try {
-                canvas = await html2canvasWithTimeout(element, {
-                  scale: 3,
-                  useCORS: true,
-                  logging: false,
-                  imageTimeout: 3000,
-                  backgroundColor: '#ffffff'
-                }, 8000);
-                // Test if exportable
-                canvas.toDataURL('image/png');
-              } catch (corsError) {
-                console.warn(`CORS print canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-                canvas = await html2canvasWithTimeout(element, {
-                  scale: 3,
-                  useCORS: false,
-                  logging: false,
-                  imageTimeout: 3000,
-                  backgroundColor: '#ffffff',
-                  onclone: (clonedDoc, clonedElement) => {
-                    const images = clonedElement.getElementsByTagName('img');
-                    for (let j = 0; j < images.length; j++) {
-                      const img = images[j];
-                      if (img.src && !img.src.startsWith('data:')) {
-                        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                      }
-                    }
-                  }
-                }, 8000);
-              }
-              const imgData = canvas.toDataURL('image/png');
-              iframeDoc.write(`
-                <div class="page-container">
-                  <img src="${imgData}" referrerPolicy="no-referrer" alt="" />
-                </div>
-              `);
-            }
-          } catch (cardError) {
-            console.error(`Error rendering card for ${person.name}:`, cardError);
-          }
-
-          // Let the UI breathe and update the progress bar smoothly
-          await new Promise(resolve => setTimeout(resolve, 30));
-        }
-
-        iframeDoc.write(`
-              <script>
-                const loader = document.getElementById('loader');
-                if (loader) loader.style.display = 'none';
-              </script>
-            </body>
-          </html>
-        `);
-        iframeDoc.close();
-
-        setGenerationProgress({
-          active: true,
-          current: filteredPeople.length,
-          total: filteredPeople.length,
-          message: 'Sending to system print dialog...'
-        });
-
-        setTimeout(() => {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-          setTimeout(() => {
-            document.body.removeChild(iframe);
-            setRenderingCard(null);
-            setGenerationProgress(null);
-          }, 1000);
-        }, 500);
-
-      } catch (err) {
-        console.error('Error in bulk printing:', err);
-        setRenderingCard(null);
-        setGenerationProgress(null);
-        window.print();
-      }
-    } else {
-      const person = selectedPerson;
-      if (!person) return;
-      const element = document.getElementById(`card-${person.id || person.studentId}`);
-      if (!element) return;
-
-      setGenerationProgress({
-        active: true,
-        current: 0,
-        total: 1,
-        message: `Preparing print layout for ${person.name}...`
-      });
-
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        document.body.appendChild(iframe);
-
-        const iframeDoc = iframe.contentWindow?.document;
-        if (!iframeDoc) {
-          alert('Could not open print document.');
-          setGenerationProgress(null);
-          return;
-        }
-
-        let canvas;
-        try {
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 3,
-            useCORS: true,
-            logging: false,
-            imageTimeout: 3000,
-            backgroundColor: '#ffffff'
-          }, 6000);
-          // Test if exportable
-          canvas.toDataURL('image/png');
-        } catch (corsError) {
-          console.warn('CORS print single canvas failed, retrying by removing external images to prevent security error...', corsError);
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 3,
-            useCORS: false,
-            logging: false,
-            imageTimeout: 3000,
-            backgroundColor: '#ffffff',
-            onclone: (clonedDoc, clonedElement) => {
-              const images = clonedElement.getElementsByTagName('img');
-              for (let j = 0; j < images.length; j++) {
-                const img = images[j];
-                if (img.src && !img.src.startsWith('data:')) {
-                  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                }
-              }
-            }
-          }, 6000);
-        }
-        const imgData = canvas.toDataURL('image/png');
-
-        iframeDoc.open();
-        iframeDoc.write(`
-          <html>
-            <head>
-              <title>Print Document - ${person.name}</title>
-              <style>
-                @page { margin: 0; size: auto; }
-                body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: white; }
-                img { max-width: 100%; max-height: 100vh; height: auto; display: block; margin: 0 auto; }
-              </style>
-            </head>
-            <body>
-              <img src="${imgData}" referrerPolicy="no-referrer" alt="" />
-            </body>
-          </html>
-        `);
-        iframeDoc.close();
-
-        setTimeout(() => {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-          setTimeout(() => {
-            document.body.removeChild(iframe);
-            setGenerationProgress(null);
-          }, 1000);
-        }, 500);
-
-      } catch (err) {
-        console.error('Error printing certificate/card:', err);
-        setGenerationProgress(null);
-        window.print();
-      }
-    }
+  const handlePrintSingle = (person: any) => {
+    if (!person) return;
+    setPrintPeople([person]);
+    setTimeout(() => {
+      window.print();
+      setPrintPeople(null);
+    }, 200);
   };
 
+  const handlePrintAll = () => {
+    if (filteredPeople.length === 0) {
+      alert('No data available to print.');
+      return;
+    }
+    setPrintPeople(filteredPeople);
+    setTimeout(() => {
+      window.print();
+      setPrintPeople(null);
+    }, 400);
+  };
+
+  const [generationProgress, setGenerationProgress] = useState<{ active: boolean; current: number; total: number; message: string } | null>(null);
+
   const handleDownloadPDF = async (person: any) => {
+    if (!person) return;
+    const cardId = `card-${person.id || person.studentId}`;
+    const element = document.getElementById(cardId);
+    if (!element) {
+      alert('Card element not found on screen. Please make sure the card is visible.');
+      return;
+    }
+
     setGenerationProgress({
       active: true,
       current: 0,
       total: 1,
-      message: `Preparing document for ${person.name || 'document'}...`
+      message: `Preparing high-quality PDF for ${person.name || 'document'}...`
     });
 
     try {
-      // ALWAYS use the clean isolated bulk-render-temp slot to avoid parent transforms and on-screen UI interference
-      setRenderingCard(null);
-      await new Promise(resolve => setTimeout(resolve, 50));
-      setRenderingCard(person);
-      // Wait for React to render the isolated element cleanly
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const element = document.getElementById('bulk-render-temp');
-      if (!element) {
-        throw new Error('Isolated rendering element not found');
-      }
+      await waitForAllFontsAndImages(element);
 
-      setGenerationProgress({
-        active: true,
-        current: 1,
-        total: 1,
-        message: `Caching assets & inlining images...`
-      });
-
-      // Inline all images in the card to Base64 to guarantee offline speed, no CORS errors, and no tainted canvas.
-      await inlineAllImagesInElement(element);
-
-      setGenerationProgress({
-        active: true,
-        current: 1,
-        total: 1,
-        message: `Generating high-quality PDF...`
-      });
-
-      // Since images are already pre-converted/inlined as Base64, html2canvas runs instantly (<100ms) with zero CORS overhead
-      const canvas = await html2canvasWithTimeout(element, {
-        scale: 2.5, // 2.5x scale for extremely crisp print quality
-        useCORS: true,
-        logging: false,
-        imageTimeout: 0, // No need for timeouts since images are fully preloaded and local
-        backgroundColor: '#ffffff',
-        allowTaint: true, // Safe because images are verified inlined
-      }, 5000);
+      const canvas = await Promise.race([
+        html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          imageTimeout: 5000,
+        }),
+        new Promise<HTMLCanvasElement>((_, reject) => 
+          setTimeout(() => reject(new Error('Canvas generation timed out')), 10000)
+        )
+      ]);
 
       const imgData = canvas.toDataURL('image/png');
       const isLandscape = canvas.width > canvas.height;
@@ -24295,7 +24056,6 @@ const IDCardsModule = ({
       });
       pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
       
-      // Standalone standard secure download logic compatible with iframe/sandboxing
       const blob = pdf.output('blob');
       const blobUrl = URL.createObjectURL(blob);
       const downloadLink = document.createElement('a');
@@ -24305,14 +24065,14 @@ const IDCardsModule = ({
       downloadLink.click();
       document.body.removeChild(downloadLink);
       URL.revokeObjectURL(blobUrl);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating PDF:', error);
-      alert('Error generating PDF. Please try printing instead.');
+      alert(`Could not download PDF: ${error.message || error}. Try printing and choosing "Save as PDF" which always works perfectly!`);
     } finally {
-      setRenderingCard(null);
       setGenerationProgress(null);
     }
   };
+
   const handleBulkDownloadSinglePDF = async () => {
     if (filteredPeople.length === 0) {
       alert('No data available to download.');
@@ -24326,50 +24086,45 @@ const IDCardsModule = ({
       active: true,
       current: 0,
       total: filteredPeople.length,
-      message: `Initializing combined PDF generation for ${filteredPeople.length} cards...`
+      message: `Initializing combined PDF generation...`
     });
 
     try {
-      // Create initial PDF instance. Format will be dynamically set page-by-page.
       let pdf: any = null;
 
       for (let i = 0; i < filteredPeople.length; i++) {
         const person = filteredPeople[i];
+        const cardId = `card-${person.id || person.studentId}`;
+        const element = document.getElementById(cardId);
+        
+        if (!element) {
+          console.warn(`Card element not found for: ${person.name}`);
+          continue;
+        }
+
+        setGenerationProgress({
+          active: true,
+          current: i + 1,
+          total: filteredPeople.length,
+          message: `Rendering card ${i + 1} of ${filteredPeople.length} (${person.name})...`
+        });
+
         try {
-          setGenerationProgress({
-            active: true,
-            current: i + 1,
-            total: filteredPeople.length,
-            message: `Rendering combined card ${i + 1} of ${filteredPeople.length} (${person.name})...`
-          });
+          const canvas = await Promise.race([
+            html2canvas(element, {
+              scale: 1.5,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              logging: false,
+              imageTimeout: 3000,
+            }),
+            new Promise<HTMLCanvasElement>((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), 6000)
+            )
+          ]);
 
-          // Use isolated single card renderer
-          setRenderingCard(null);
-          await new Promise(resolve => setTimeout(resolve, 30));
-          setRenderingCard(person);
-          await new Promise(resolve => setTimeout(resolve, 250));
-
-          const element = document.getElementById('bulk-render-temp');
-          if (!element) {
-            console.warn(`Isolated render element not found for card: ${person.name}`);
-            continue;
-          }
-
-          // Convert all images to Base64 in parallel. Caching handles static assets like logos in 0ms!
-          await inlineAllImagesInElement(element);
-
-          // Since images are guaranteed to be inlined Base64, html2canvas runs instantly with zero image timeout
-          const canvas = await html2canvasWithTimeout(element, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            imageTimeout: 0,
-            backgroundColor: '#ffffff',
-            allowTaint: true,
-          }, 5000);
-          
           const imgData = canvas.toDataURL('image/png');
-          
           const isLandscape = canvas.width > canvas.height;
           const pageW = Math.round(canvas.width / 2);
           const pageH = Math.round(canvas.height / 2);
@@ -24385,12 +24140,11 @@ const IDCardsModule = ({
           }
 
           pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
-
-          // Allow UI to refresh and update rendering progress bar
-          await new Promise(resolve => setTimeout(resolve, 30));
-        } catch (cardError) {
-          console.error(`Failed to render combined card for ${person?.name || 'Index ' + i}:`, cardError);
+        } catch (err) {
+          console.error(`Skipped card for ${person.name}:`, err);
         }
+
+        await new Promise(resolve => setTimeout(resolve, 20));
       }
 
       if (pdf) {
@@ -24398,10 +24152,9 @@ const IDCardsModule = ({
           active: true,
           current: filteredPeople.length,
           total: filteredPeople.length,
-          message: 'Finalizing and downloading combined PDF document...'
+          message: 'Finalizing combined PDF download...'
         });
 
-        // Standalone standard secure download logic compatible with iframe/sandboxing
         const blob = pdf.output('blob');
         const blobUrl = URL.createObjectURL(blob);
         const downloadLink = document.createElement('a');
@@ -24412,13 +24165,12 @@ const IDCardsModule = ({
         document.body.removeChild(downloadLink);
         URL.revokeObjectURL(blobUrl);
       } else {
-        alert('Could not generate PDF pages.');
+        alert('Could not generate PDF pages. Please make sure cards are rendered in the list.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error during combined PDF generation:', err);
-      alert('An error occurred during combined PDF generation. Please try printing or download ZIP instead.');
+      alert(`An error occurred during bulk PDF generation: ${err.message || err}`);
     } finally {
-      setRenderingCard(null);
       setGenerationProgress(null);
     }
   };
@@ -24436,53 +24188,52 @@ const IDCardsModule = ({
       active: true,
       current: 0,
       total: filteredPeople.length,
-      message: `Initializing ZIP package for ${filteredPeople.length} ${format.toUpperCase()} cards...`
+      message: `Initializing ZIP package for ${filteredPeople.length} ${format.toUpperCase()} files...`
     });
 
     try {
       const zip = new JSZip();
+      let addedCount = 0;
 
       for (let i = 0; i < filteredPeople.length; i++) {
         const person = filteredPeople[i];
+        const cardId = `card-${person.id || person.studentId}`;
+        const element = document.getElementById(cardId);
+        
+        if (!element) {
+          console.warn(`Card element not found for ZIP: ${person.name}`);
+          continue;
+        }
+
+        setGenerationProgress({
+          active: true,
+          current: i + 1,
+          total: filteredPeople.length,
+          message: `Packaging card ${i + 1} of ${filteredPeople.length} (${person.name})...`
+        });
+
         try {
-          setGenerationProgress({
-            active: true,
-            current: i + 1,
-            total: filteredPeople.length,
-            message: `Generating ${format.toUpperCase()} card ${i + 1} of ${filteredPeople.length} (${person.name})...`
-          });
-
-          // Use isolated single card renderer
-          setRenderingCard(null);
-          await new Promise(resolve => setTimeout(resolve, 30));
-          setRenderingCard(person);
-          await new Promise(resolve => setTimeout(resolve, 250));
-
-          const element = document.getElementById('bulk-render-temp');
-          if (!element) {
-            console.warn(`Isolated render element not found for ZIP card: ${person.name}`);
-            continue;
-          }
-
-          // Inline all images inside the element using parallel Base64 fetching and memory caching
-          await inlineAllImagesInElement(element);
-
-          // Since images are guaranteed to be inlined Base64, html2canvas runs instantly with zero image timeout
-          const canvas = await html2canvasWithTimeout(element, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            imageTimeout: 0,
-            backgroundColor: '#ffffff',
-            allowTaint: true,
-          }, 5000);
+          const canvas = await Promise.race([
+            html2canvas(element, {
+              scale: 1.5,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              logging: false,
+              imageTimeout: 3000,
+            }),
+            new Promise<HTMLCanvasElement>((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), 6000)
+            )
+          ]);
 
           const imgData = canvas.toDataURL('image/png');
 
           if (format === 'png') {
             const rawPng = imgData.split(',')[1];
-            const fileName = `${person.name}_${person.studentId || person.id}.png`;
+            const fileName = `${person.name}_${person.studentId || person.id || 'id'}.png`;
             zip.file(fileName, rawPng, { base64: true });
+            addedCount++;
           } else {
             const isLandscape = canvas.width > canvas.height;
             const pageW = Math.round(canvas.width / 2);
@@ -24496,36 +24247,39 @@ const IDCardsModule = ({
             pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
             
             const pdfBlob = pdf.output('blob');
-            const fileName = `${person.name}_${person.studentId || person.id}.pdf`;
+            const fileName = `${person.name}_${person.studentId || person.id || 'id'}.pdf`;
             zip.file(fileName, pdfBlob);
+            addedCount++;
           }
-
-          await new Promise(resolve => setTimeout(resolve, 30));
-        } catch (cardError) {
-          console.error(`Failed to generate bulk card in ZIP for ${person?.name || 'Index ' + i}:`, cardError);
+        } catch (err) {
+          console.error(`Skipped ZIP entry for ${person.name}:`, err);
         }
+
+        await new Promise(resolve => setTimeout(resolve, 20));
       }
 
-      setGenerationProgress({
-        active: true,
-        current: filteredPeople.length,
-        total: filteredPeople.length,
-        message: 'Packaging and compressing ZIP archive...'
-      });
+      if (addedCount > 0) {
+        setGenerationProgress({
+          active: true,
+          current: filteredPeople.length,
+          total: filteredPeople.length,
+          message: 'Compressing and downloading ZIP archive...'
+        });
 
-      const zipContent = await zip.generateAsync({ type: 'blob' });
-      const downloadLink = document.createElement('a');
-      downloadLink.href = URL.createObjectURL(zipContent);
-      downloadLink.download = `Bulk_${activeTab}_ID_Cards_${format.toUpperCase()}.zip`;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-
-    } catch (err) {
+        const zipContent = await zip.generateAsync({ type: 'blob' });
+        const downloadLink = document.createElement('a');
+        downloadLink.href = URL.createObjectURL(zipContent);
+        downloadLink.download = `Bulk_${activeTab}_Cards_${format.toUpperCase()}.zip`;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+      } else {
+        alert('Could not package any cards.');
+      }
+    } catch (err: any) {
       console.error('Error during bulk ZIP generation:', err);
-      alert('An error occurred during ZIP generation.');
+      alert(`An error occurred during ZIP generation: ${err.message || err}`);
     } finally {
-      setRenderingCard(null);
       setGenerationProgress(null);
     }
   };
@@ -24534,10 +24288,10 @@ const IDCardsModule = ({
     <div className="space-y-8 max-w-7xl mx-auto pb-20">
       {/* High-fidelity visual progress modal for document generation */}
       {generationProgress && generationProgress.active && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm no-print">
           <div className="bg-white rounded-[32px] p-8 shadow-2xl max-w-md w-full border border-slate-100 flex flex-col items-center text-center">
             <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6" />
-            <h3 className="text-xl font-black text-text-heading mb-2">Generating PDF Documents</h3>
+            <h3 className="text-xl font-black text-text-heading mb-2">Generating Documents</h3>
             <p className="text-sm font-bold text-primary mb-6">{generationProgress.message}</p>
             
             {generationProgress.total > 0 && (
@@ -24552,7 +24306,7 @@ const IDCardsModule = ({
             {generationProgress.total > 0 && (
               <div className="flex justify-between w-full text-xs font-bold text-text-sub">
                 <span>Progress</span>
-                <span>{generationProgress.current} of {generationProgress.total} cards ({Math.round((generationProgress.current / generationProgress.total) * 100)}%)</span>
+                <span>{generationProgress.current} of {generationProgress.total} items ({Math.round((generationProgress.current / generationProgress.total) * 100)}%)</span>
               </div>
             )}
             
@@ -24735,37 +24489,38 @@ const IDCardsModule = ({
                   <h3 className="font-black text-text-heading">Bulk Generation Mode</h3>
                   <p className="text-xs text-text-sub font-bold text-text-sub">Generating {filteredPeople.length} {activeTab}s{selectedClass ? ` for Class ${selectedClass}` : ' for All Classes'}</p>
                 </div>
-                <div className="flex items-center gap-2 no-print flex-wrap">
+                <div className="flex items-center gap-3 no-print flex-wrap">
+                  <button 
+                    onClick={handlePrintAll} 
+                    className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
+                    title="Print all cards natively with perfect quality and vector layouts"
+                  >
+                    <Printer size={16} />
+                    Print All Cards
+                  </button>
                   <button 
                     onClick={handleBulkDownloadSinglePDF} 
-                    className="flex items-center gap-2 bg-gradient-to-r from-primary to-[#0047AB] text-white px-4 py-2.5 rounded-xl font-bold hover:shadow-md transition-all text-xs"
-                    title="Generate a single combined PDF for all cards"
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-emerald-600/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
+                    title="Download a single combined PDF with all cards on separate pages"
                   >
                     <FileDown size={16} />
                     Combined PDF
                   </button>
                   <button 
                     onClick={() => handleBulkDownloadZIP('pdf')} 
-                    className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2.5 rounded-xl font-bold hover:bg-indigo-100 transition-all text-xs"
-                    title="Generate individual PDFs and package them in a ZIP file"
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-indigo-600/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
+                    title="Download a ZIP archive containing individual PDF files"
                   >
                     <FolderDown size={16} />
                     ZIP (PDFs)
                   </button>
                   <button 
                     onClick={() => handleBulkDownloadZIP('png')} 
-                    className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-bold hover:bg-emerald-100 transition-all text-xs"
-                    title="Generate individual images and package them in a ZIP file"
+                    className="flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
+                    title="Download a ZIP archive containing individual PNG image files"
                   >
-                    <Download size={16} />
+                    <FolderDown size={16} />
                     ZIP (Images)
-                  </button>
-                  <button 
-                    onClick={handlePrint} 
-                    className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-bold hover:bg-slate-50 transition-all text-xs"
-                  >
-                    <Printer size={16} />
-                    Print All
                   </button>
                 </div>
               </div>
@@ -24789,11 +24544,19 @@ const IDCardsModule = ({
                         </div>
                       )}
 
-                      {/* Direct Single Card Download Action */}
+                      {/* Direct Single Card Action */}
                       <div className="mt-6 flex items-center justify-center gap-3 no-print">
                         <button
+                          onClick={() => handlePrintSingle(p)}
+                          className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl text-xs font-black transition-all shadow-md hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
+                          title="Print this card natively"
+                        >
+                          <Printer size={14} />
+                          Print Card
+                        </button>
+                        <button
                           onClick={() => handleDownloadPDF(p)}
-                          className="flex items-center gap-2 bg-gradient-to-r from-[#1e293b] to-slate-800 hover:from-slate-800 hover:to-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all shadow-md hover:scale-[1.03] active:scale-[0.97]"
+                          className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
                           title="Download PDF for this single card"
                         >
                           <Download size={14} />
@@ -24846,17 +24609,19 @@ const IDCardsModule = ({
                     )}
                   </div>
 
-                  <div className="flex gap-4 no-print">
+                  <div className="flex flex-wrap gap-4 justify-center no-print">
                     <button 
-                      onClick={handlePrint}
-                      className="flex items-center gap-2 bg-primary text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-primary/20 hover:scale-105 transition-all"
+                      onClick={() => handlePrintSingle(selectedPerson)}
+                      className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-primary/20 hover:scale-105 transition-all cursor-pointer"
+                      title="Print this card natively with perfect vector layout"
                     >
                       <Printer size={20} />
-                      Print Document
+                      Print Card
                     </button>
                     <button 
                       onClick={() => handleDownloadPDF(selectedPerson)}
-                      className="flex items-center gap-2 bg-white border border-slate-200 px-8 py-4 rounded-2xl font-black hover:bg-slate-50 transition-all"
+                      className="flex items-center gap-2 bg-white border border-slate-200 px-8 py-4 rounded-2xl font-black hover:bg-slate-50 shadow-md hover:scale-105 transition-all cursor-pointer text-slate-700"
+                      title="Download PDF for this card"
                     >
                       <Download size={20} />
                       Download PDF
@@ -24879,27 +24644,68 @@ const IDCardsModule = ({
         </div>
       </div>
 
-      {/* Isolated single card renderer for high-speed PDF generation without DOM bloat */}
-      <div style={{ position: 'fixed', top: '0px', left: '0px', zIndex: -9999, opacity: 1, pointerEvents: 'none' }} className="no-print">
-        {renderingCard && (
-          <div id="bulk-render-temp" className="bg-white p-4 rounded-[32px] inline-block">
-            {activeTab === 'student' && <IDCard person={renderingCard} orientation={orientation} template={idTemplate} />}
-            {activeTab === 'teacher' && <IDCard person={renderingCard} type="teacher" orientation={orientation} template={idTemplate} />}
-            {activeTab === 'hostel' && <HostelCard student={renderingCard} />}
-            {activeTab === 'transfer' && <TransferCertificate student={renderingCard} />}
-            {activeTab === 'migration' && <MigrationCertificate student={renderingCard} />}
-            {activeTab === 'awards' && <AwardCertificate student={renderingCard} />}
-            {activeTab === 'experience' && <ExperienceCertificate staff={renderingCard} />}
-            {activeTab === 'appraisal' && <AppraisalCertificate person={renderingCard} />}
-            {activeTab === 'marksheet' && (
-              <MarkSheet 
-                student={renderingCard} 
-                results={examResults.filter((r: any) => r.studentId === renderingCard.studentId)} 
-              />
-            )}
-          </div>
-        )}
-      </div>
+      {/* Clean native high-fidelity print container */}
+      {printPeople && (
+        <div className="print-only-container">
+          <style>{`
+            @media print {
+              #root > *:not(.print-only-container) {
+                display: none !important;
+              }
+              body {
+                background-color: white !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              .print-only-container {
+                display: block !important;
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                background: white !important;
+              }
+              .print-page-break {
+                page-break-after: always !important;
+                page-break-inside: avoid !important;
+                break-after: page !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                min-height: 100vh !important;
+                box-sizing: border-box !important;
+                padding: 20px !important;
+                background-color: white !important;
+              }
+            }
+            @media screen {
+              .print-only-container {
+                display: none !important;
+              }
+            }
+          `}</style>
+          {printPeople.map((p: any) => (
+            <div key={p.id || p.studentId} className="print-page-break">
+              <div style={{ display: 'inline-block' }}>
+                {activeTab === 'student' && <IDCard person={p} orientation={orientation} template={idTemplate} />}
+                {activeTab === 'teacher' && <IDCard person={p} type="teacher" orientation={orientation} template={idTemplate} />}
+                {activeTab === 'hostel' && <HostelCard student={p} />}
+                {activeTab === 'transfer' && <TransferCertificate student={p} />}
+                {activeTab === 'migration' && <MigrationCertificate student={p} />}
+                {activeTab === 'awards' && <AwardCertificate student={p} />}
+                {activeTab === 'experience' && <ExperienceCertificate staff={p} />}
+                {activeTab === 'appraisal' && <AppraisalCertificate person={p} />}
+                {activeTab === 'marksheet' && (
+                  <MarkSheet 
+                    student={p} 
+                    results={examResults.filter((r: any) => r.studentId === p.studentId)} 
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
