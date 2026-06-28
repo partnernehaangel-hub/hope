@@ -17513,6 +17513,7 @@ const schoolMigrations = `
 
   useEffect(() => {
     fetchAllData();
+    convertAllPageStyles();
   }, [supabase]);
 
   const [taxes, setTaxes] = useState(0);
@@ -24028,21 +24029,13 @@ const IDCardsModule = ({
     });
 
     try {
-      await waitForAllFontsAndImages(element);
+      // Pre-convert CSS style sheets to prevent html2canvas oklch parsing crashes
+      await convertAllPageStyles();
 
-      const canvas = await Promise.race([
-        html2canvas(element, {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          imageTimeout: 5000,
-        }),
-        new Promise<HTMLCanvasElement>((_, reject) => 
-          setTimeout(() => reject(new Error('Canvas generation timed out')), 10000)
-        )
-      ]);
+      const canvas = await html2canvasWithTimeout(element, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+      }, 10000);
 
       const imgData = canvas.toDataURL('image/png');
       const isLandscape = canvas.width > canvas.height;
@@ -24090,6 +24083,8 @@ const IDCardsModule = ({
     });
 
     try {
+      // Pre-convert CSS style sheets to prevent html2canvas oklch parsing crashes
+      await convertAllPageStyles();
       let pdf: any = null;
 
       for (let i = 0; i < filteredPeople.length; i++) {
@@ -24110,19 +24105,10 @@ const IDCardsModule = ({
         });
 
         try {
-          const canvas = await Promise.race([
-            html2canvas(element, {
-              scale: 1.5,
-              useCORS: true,
-              allowTaint: true,
-              backgroundColor: '#ffffff',
-              logging: false,
-              imageTimeout: 3000,
-            }),
-            new Promise<HTMLCanvasElement>((_, reject) => 
-              setTimeout(() => reject(new Error('Timeout')), 6000)
-            )
-          ]);
+          const canvas = await html2canvasWithTimeout(element, {
+            scale: 1.5,
+            backgroundColor: '#ffffff',
+          }, 6000);
 
           const imgData = canvas.toDataURL('image/png');
           const isLandscape = canvas.width > canvas.height;
@@ -24192,6 +24178,8 @@ const IDCardsModule = ({
     });
 
     try {
+      // Pre-convert CSS style sheets to prevent html2canvas oklch parsing crashes
+      await convertAllPageStyles();
       const zip = new JSZip();
       let addedCount = 0;
 
@@ -24213,19 +24201,10 @@ const IDCardsModule = ({
         });
 
         try {
-          const canvas = await Promise.race([
-            html2canvas(element, {
-              scale: 1.5,
-              useCORS: true,
-              allowTaint: true,
-              backgroundColor: '#ffffff',
-              logging: false,
-              imageTimeout: 3000,
-            }),
-            new Promise<HTMLCanvasElement>((_, reject) => 
-              setTimeout(() => reject(new Error('Timeout')), 6000)
-            )
-          ]);
+          const canvas = await html2canvasWithTimeout(element, {
+            scale: 1.5,
+            backgroundColor: '#ffffff',
+          }, 6000);
 
           const imgData = canvas.toDataURL('image/png');
 
