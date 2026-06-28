@@ -140,6 +140,13 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any, timeou
   ]);
 };
 
+const getProxyImageUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+  if (url.startsWith('/') || url.startsWith(window.location.origin)) return url;
+  return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+};
+
 const extractIdFromQR = (text: string, paramName: string = 'id') => {
   if (text && text.startsWith('http')) {
     try {
@@ -22711,7 +22718,7 @@ const IDCardsModule = ({
                     <div className="w-24 h-28 border-2 border-slate-100 p-1 bg-white shadow-md rounded-xl overflow-hidden">
                         <div className="w-full h-full bg-slate-50 flex items-center justify-center overflow-hidden rounded-lg">
                             {person.photo ? (
-                                <img src={person.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={getProxyImageUrl(person.photo)} crossOrigin="anonymous" alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                                 <div className="flex flex-col items-center gap-1 opacity-20">
                                   <User size={32} className="text-slate-400" />
@@ -22792,7 +22799,7 @@ const IDCardsModule = ({
             <div className="mt-auto pt-2 flex justify-between items-center border-t border-slate-100">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-slate-50 rounded-lg p-1.5 border border-slate-100">
-                     <img src={schoolProfile?.logo} alt="" className="w-full h-full object-contain grayscale opacity-50" />
+                     <img src={getProxyImageUrl(schoolProfile?.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain grayscale opacity-50" />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[6px] font-black uppercase text-slate-300">Official</span>
@@ -22803,7 +22810,7 @@ const IDCardsModule = ({
                 <div className="text-center">
                      <div className="w-24 h-8 border-b border-slate-200 mx-auto mb-1 flex items-end justify-center relative">
                         {schoolProfile?.principalSignature ? (
-                          <img src={schoolProfile?.principalSignature} alt="" className="h-full object-contain mix-blend-multiply absolute bottom-0" referrerPolicy="no-referrer" />
+                          <img src={getProxyImageUrl(schoolProfile?.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply absolute bottom-0" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="text-[6px] text-slate-200 italic mb-1 uppercase font-black">Authorized Stamp</div>
                         )}
@@ -23023,19 +23030,19 @@ const IDCardsModule = ({
         <div className="grid grid-cols-3 gap-12 mt-16 pt-12 border-t border-slate-100">
           <div className="text-center">
             <div className="w-48 h-12 border-b-2 border-slate-300 mx-auto mb-3 flex items-end justify-center relative">
-               <img src={schoolProfile.classTeacherSignature} alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
+               <img src={getProxyImageUrl(schoolProfile.classTeacherSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
             </div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Class Teacher</p>
           </div>
           <div className="text-center flex flex-col items-center justify-center">
             <div className="w-24 h-24 rounded-full border-2 border-primary/10 flex items-center justify-center mb-2 bg-primary/5 shadow-inner">
-               <img src={schoolProfile.schoolStamp} alt="" className="w-16 h-16 object-contain mix-blend-multiply opacity-40 grayscale contrast-150" />
+               <img src={getProxyImageUrl(schoolProfile.schoolStamp)} crossOrigin="anonymous" alt="" className="w-16 h-16 object-contain mix-blend-multiply opacity-40 grayscale contrast-150" />
             </div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Institutional Seal</p>
           </div>
           <div className="text-center">
             <div className="w-48 h-12 border-b-2 border-slate-300 mx-auto mb-3 flex items-end justify-center relative">
-               <img src={schoolProfile.principalSignature} alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
+               <img src={getProxyImageUrl(schoolProfile.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
             </div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Principal</p>
           </div>
@@ -23151,7 +23158,7 @@ const IDCardsModule = ({
       <div className="flex-1 flex flex-col items-center pt-8 px-6">
         <div className="w-28 h-28 rounded-full border-4 border-emerald-100 p-1 mb-6">
           <div className="w-full h-full rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 font-black text-3xl overflow-hidden">
-            {student.photo ? <img src={student.photo} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : (student.name?.[0] || '?')}
+            {student.photo ? <img src={getProxyImageUrl(student.photo)} crossOrigin="anonymous" alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : (student.name?.[0] || '?')}
           </div>
         </div>
         <h3 className="text-xl font-black text-text-heading text-center uppercase">{student.name} {student.surname}</h3>
@@ -23688,97 +23695,101 @@ const IDCardsModule = ({
 
       for (let i = 0; i < filteredPeople.length; i++) {
         const person = filteredPeople[i];
-        setGenerationProgress({
-          active: true,
-          current: i + 1,
-          total: filteredPeople.length,
-          message: `Rendering combined card ${i + 1} of ${filteredPeople.length} (${person.name})...`
-        });
-
-        // Use isolated single card renderer
-        setRenderingCard(null);
-        await new Promise(resolve => setTimeout(resolve, 30));
-        setRenderingCard(person);
-        await new Promise(resolve => setTimeout(resolve, 250));
-
-        const element = document.getElementById('bulk-render-temp');
-        if (!element) {
-          console.warn(`Isolated render element not found for card: ${person.name}`);
-          continue;
-        }
-
-        let canvas;
         try {
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            imageTimeout: 5000,
-            backgroundColor: '#ffffff',
-            allowTaint: false,
-          }, 12000);
-          // Test if exportable
-          canvas.toDataURL('image/png');
-        } catch (corsError) {
-          console.warn(`CORS bulk PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 2,
-            useCORS: false,
-            logging: false,
-            imageTimeout: 5000,
-            backgroundColor: '#ffffff',
-            allowTaint: true,
-            onclone: (clonedDoc, clonedElement) => {
-              const images = clonedElement.getElementsByTagName('img');
-              for (let j = 0; j < images.length; j++) {
-                const img = images[j];
-                if (img.src && !img.src.startsWith('data:')) {
-                  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                  img.removeAttribute('srcset');
+          setGenerationProgress({
+            active: true,
+            current: i + 1,
+            total: filteredPeople.length,
+            message: `Rendering combined card ${i + 1} of ${filteredPeople.length} (${person.name})...`
+          });
+
+          // Use isolated single card renderer
+          setRenderingCard(null);
+          await new Promise(resolve => setTimeout(resolve, 30));
+          setRenderingCard(person);
+          await new Promise(resolve => setTimeout(resolve, 250));
+
+          const element = document.getElementById('bulk-render-temp');
+          if (!element) {
+            console.warn(`Isolated render element not found for card: ${person.name}`);
+            continue;
+          }
+
+          let canvas;
+          try {
+            canvas = await html2canvasWithTimeout(element, {
+              scale: 2,
+              useCORS: true,
+              logging: false,
+              imageTimeout: 5000,
+              backgroundColor: '#ffffff',
+              allowTaint: false,
+            }, 12000);
+            // Test if exportable
+            canvas.toDataURL('image/png');
+          } catch (corsError) {
+            console.warn(`CORS bulk PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
+            canvas = await html2canvasWithTimeout(element, {
+              scale: 2,
+              useCORS: false,
+              logging: false,
+              imageTimeout: 5000,
+              backgroundColor: '#ffffff',
+              allowTaint: true,
+              onclone: (clonedDoc, clonedElement) => {
+                const images = clonedElement.getElementsByTagName('img');
+                for (let j = 0; j < images.length; j++) {
+                  const img = images[j];
+                  if (img.src && !img.src.startsWith('data:')) {
+                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                    img.removeAttribute('srcset');
+                  }
                 }
               }
-            }
-          }, 12000);
-        }
-        
-        let imgData;
-        try {
-          imgData = canvas.toDataURL('image/png');
-        } catch (exportError) {
-          console.error('Canvas still tainted in bulk, rendering without images...', exportError);
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 1.5,
-            useCORS: false,
-            logging: false,
-            backgroundColor: '#ffffff',
-            onclone: (clonedDoc, clonedElement) => {
-              const images = clonedElement.getElementsByTagName('img');
-              for (let j = 0; j < images.length; j++) {
-                images[j].style.display = 'none';
+            }, 12000);
+          }
+          
+          let imgData;
+          try {
+            imgData = canvas.toDataURL('image/png');
+          } catch (exportError) {
+            console.error('Canvas still tainted in bulk, rendering without images...', exportError);
+            canvas = await html2canvasWithTimeout(element, {
+              scale: 1.5,
+              useCORS: false,
+              logging: false,
+              backgroundColor: '#ffffff',
+              onclone: (clonedDoc, clonedElement) => {
+                const images = clonedElement.getElementsByTagName('img');
+                for (let j = 0; j < images.length; j++) {
+                  images[j].style.display = 'none';
+                }
               }
-            }
-          }, 10000);
-          imgData = canvas.toDataURL('image/png');
+            }, 10000);
+            imgData = canvas.toDataURL('image/png');
+          }
+          
+          const isLandscape = canvas.width > canvas.height;
+          const pageW = Math.round(canvas.width / 2);
+          const pageH = Math.round(canvas.height / 2);
+
+          if (!pdf) {
+            pdf = new jsPDF({
+              orientation: isLandscape ? 'landscape' : 'portrait',
+              unit: 'px',
+              format: [pageW, pageH]
+            });
+          } else {
+            pdf.addPage([pageW, pageH], isLandscape ? 'landscape' : 'portrait');
+          }
+
+          pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
+
+          // Allow UI to refresh and update rendering progress bar
+          await new Promise(resolve => setTimeout(resolve, 30));
+        } catch (cardError) {
+          console.error(`Failed to render combined card for ${person?.name || 'Index ' + i}:`, cardError);
         }
-        
-        const isLandscape = canvas.width > canvas.height;
-        const pageW = Math.round(canvas.width / 2);
-        const pageH = Math.round(canvas.height / 2);
-
-        if (!pdf) {
-          pdf = new jsPDF({
-            orientation: isLandscape ? 'landscape' : 'portrait',
-            unit: 'px',
-            format: [pageW, pageH]
-          });
-        } else {
-          pdf.addPage([pageW, pageH], isLandscape ? 'landscape' : 'portrait');
-        }
-
-        pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
-
-        // Allow UI to refresh and update rendering progress bar
-        await new Promise(resolve => setTimeout(resolve, 30));
       }
 
       if (pdf) {
@@ -23832,101 +23843,105 @@ const IDCardsModule = ({
 
       for (let i = 0; i < filteredPeople.length; i++) {
         const person = filteredPeople[i];
-        setGenerationProgress({
-          active: true,
-          current: i + 1,
-          total: filteredPeople.length,
-          message: `Generating ${format.toUpperCase()} card ${i + 1} of ${filteredPeople.length} (${person.name})...`
-        });
-
-        // Use isolated single card renderer
-        setRenderingCard(null);
-        await new Promise(resolve => setTimeout(resolve, 30));
-        setRenderingCard(person);
-        await new Promise(resolve => setTimeout(resolve, 250));
-
-        const element = document.getElementById('bulk-render-temp');
-        if (!element) {
-          console.warn(`Isolated render element not found for ZIP card: ${person.name}`);
-          continue;
-        }
-
-        let canvas;
         try {
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            imageTimeout: 5000,
-            backgroundColor: '#ffffff',
-            allowTaint: false,
-          }, 12000);
-          // Test if exportable
-          canvas.toDataURL('image/png');
-        } catch (corsError) {
-          console.warn(`CORS bulk ZIP canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 2,
-            useCORS: false,
-            logging: false,
-            imageTimeout: 5000,
-            backgroundColor: '#ffffff',
-            allowTaint: true,
-            onclone: (clonedDoc, clonedElement) => {
-              const images = clonedElement.getElementsByTagName('img');
-              for (let j = 0; j < images.length; j++) {
-                const img = images[j];
-                if (img.src && !img.src.startsWith('data:')) {
-                  img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                  img.removeAttribute('srcset');
+          setGenerationProgress({
+            active: true,
+            current: i + 1,
+            total: filteredPeople.length,
+            message: `Generating ${format.toUpperCase()} card ${i + 1} of ${filteredPeople.length} (${person.name})...`
+          });
+
+          // Use isolated single card renderer
+          setRenderingCard(null);
+          await new Promise(resolve => setTimeout(resolve, 30));
+          setRenderingCard(person);
+          await new Promise(resolve => setTimeout(resolve, 250));
+
+          const element = document.getElementById('bulk-render-temp');
+          if (!element) {
+            console.warn(`Isolated render element not found for ZIP card: ${person.name}`);
+            continue;
+          }
+
+          let canvas;
+          try {
+            canvas = await html2canvasWithTimeout(element, {
+              scale: 2,
+              useCORS: true,
+              logging: false,
+              imageTimeout: 5000,
+              backgroundColor: '#ffffff',
+              allowTaint: false,
+            }, 12000);
+            // Test if exportable
+            canvas.toDataURL('image/png');
+          } catch (corsError) {
+            console.warn(`CORS bulk ZIP canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
+            canvas = await html2canvasWithTimeout(element, {
+              scale: 2,
+              useCORS: false,
+              logging: false,
+              imageTimeout: 5000,
+              backgroundColor: '#ffffff',
+              allowTaint: true,
+              onclone: (clonedDoc, clonedElement) => {
+                const images = clonedElement.getElementsByTagName('img');
+                for (let j = 0; j < images.length; j++) {
+                  const img = images[j];
+                  if (img.src && !img.src.startsWith('data:')) {
+                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                    img.removeAttribute('srcset');
+                  }
                 }
               }
-            }
-          }, 12000);
-        }
+            }, 12000);
+          }
 
-        let imgData;
-        try {
-          imgData = canvas.toDataURL('image/png');
-        } catch (exportError) {
-          console.error('Canvas still tainted in bulk ZIP, rendering without images...', exportError);
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 1.5,
-            useCORS: false,
-            logging: false,
-            backgroundColor: '#ffffff',
-            onclone: (clonedDoc, clonedElement) => {
-              const images = clonedElement.getElementsByTagName('img');
-              for (let j = 0; j < images.length; j++) {
-                images[j].style.display = 'none';
+          let imgData;
+          try {
+            imgData = canvas.toDataURL('image/png');
+          } catch (exportError) {
+            console.error('Canvas still tainted in bulk ZIP, rendering without images...', exportError);
+            canvas = await html2canvasWithTimeout(element, {
+              scale: 1.5,
+              useCORS: false,
+              logging: false,
+              backgroundColor: '#ffffff',
+              onclone: (clonedDoc, clonedElement) => {
+                const images = clonedElement.getElementsByTagName('img');
+                for (let j = 0; j < images.length; j++) {
+                  images[j].style.display = 'none';
+                }
               }
-            }
-          }, 10000);
-          imgData = canvas.toDataURL('image/png');
+            }, 10000);
+            imgData = canvas.toDataURL('image/png');
+          }
+
+          if (format === 'png') {
+            const rawPng = imgData.split(',')[1];
+            const fileName = `${person.name}_${person.studentId || person.id}.png`;
+            zip.file(fileName, rawPng, { base64: true });
+          } else {
+            const isLandscape = canvas.width > canvas.height;
+            const pageW = Math.round(canvas.width / 2);
+            const pageH = Math.round(canvas.height / 2);
+
+            const pdf = new jsPDF({
+              orientation: isLandscape ? 'landscape' : 'portrait',
+              unit: 'px',
+              format: [pageW, pageH]
+            });
+            pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
+            
+            const pdfBlob = pdf.output('blob');
+            const fileName = `${person.name}_${person.studentId || person.id}.pdf`;
+            zip.file(fileName, pdfBlob);
+          }
+
+          await new Promise(resolve => setTimeout(resolve, 30));
+        } catch (cardError) {
+          console.error(`Failed to generate bulk card in ZIP for ${person?.name || 'Index ' + i}:`, cardError);
         }
-
-        if (format === 'png') {
-          const rawPng = imgData.split(',')[1];
-          const fileName = `${person.name}_${person.studentId || person.id}.png`;
-          zip.file(fileName, rawPng, { base64: true });
-        } else {
-          const isLandscape = canvas.width > canvas.height;
-          const pageW = Math.round(canvas.width / 2);
-          const pageH = Math.round(canvas.height / 2);
-
-          const pdf = new jsPDF({
-            orientation: isLandscape ? 'landscape' : 'portrait',
-            unit: 'px',
-            format: [pageW, pageH]
-          });
-          pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
-          
-          const pdfData = pdf.output('arraybuffer');
-          const fileName = `${person.name}_${person.studentId || person.id}.pdf`;
-          zip.file(fileName, pdfData);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 30));
       }
 
       setGenerationProgress({

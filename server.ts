@@ -20,6 +20,49 @@ async function startServer() {
   // WhatsApp Integration APIs
   app.use("/api/whatsapp", whatsappRouter);
 
+  // Secure Image CORS Proxy Endpoint
+  app.get("/api/proxy-image", async (req, res) => {
+    const { url } = req.query;
+    if (!url || typeof url !== 'string') {
+      res.status(400).send('URL parameter is required');
+      return;
+    }
+
+    try {
+      const decodedUrl = decodeURIComponent(url);
+      
+      // Use an AbortController for a fast 10-second request timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(decodedUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: status ${response.status}`);
+      }
+
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      // Cache the response publicly for 1 day to maximize fast loading of student photos
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.send(buffer);
+    } catch (error: any) {
+      console.error('CORS image proxy failure:', error);
+      res.status(500).send('Failed to proxy image: ' + error.message);
+    }
+  });
+
   // API routes
   app.get("/api/auth/google/url", (req, res) => {
     const url = oauth2Client.generateAuthUrl({
