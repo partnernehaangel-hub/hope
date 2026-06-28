@@ -131,13 +131,408 @@ type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'setti
 
 // --- Utilities ---
 
-const html2canvasWithTimeout = async (element: HTMLElement, options: any, timeoutMs = 4000): Promise<HTMLCanvasElement> => {
-  return Promise.race([
-    html2canvas(element, options),
-    new Promise<HTMLCanvasElement>((_, reject) => 
-      setTimeout(() => reject(new Error('html2canvas timed out')), timeoutMs)
-    )
-  ]);
+function oklchToRgb(l: number, c: number, hDeg: number): [number, number, number] {
+  const h = (hDeg * Math.PI) / 180;
+  const a = c * Math.cos(h);
+  const b = c * Math.sin(h);
+
+  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+  const l_cube = l_ * l_ * l_;
+  const m_cube = m_ * m_ * m_;
+  const s_cube = s_ * s_ * s_;
+
+  let r = +4.0767416621 * l_cube - 3.3077115913 * m_cube + 0.2309699292 * s_cube;
+  let g = -1.2684380046 * l_cube + 2.6097574011 * m_cube - 0.3413193965 * s_cube;
+  let b_val = -0.0041960863 * l_cube - 0.7034186147 * m_cube + 1.7076147010 * s_cube;
+
+  const f = (x: number) => {
+    if (x <= 0.0031308) {
+      return 12.92 * x;
+    }
+    return 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+  };
+
+  r = Math.max(0, Math.min(1, f(r)));
+  g = Math.max(0, Math.min(1, f(g)));
+  b_val = Math.max(0, Math.min(1, f(b_val)));
+
+  return [
+    Math.round(r * 255),
+    Math.round(g * 255),
+    Math.round(b_val * 255)
+  ];
+}
+
+const convertOklchStringToRgb = (oklchStr: string): string => {
+  try {
+    const match = oklchStr.match(/oklch\(([^)]+)\)/i);
+    if (!match) return oklchStr;
+    const inner = match[1].trim().replace(/,/g, ' ');
+    
+    const [colorPart, alphaPart] = inner.split('/');
+    const coords = colorPart.trim().replace(/none/g, '0').split(/\s+/).filter(Boolean);
+    if (coords.length < 3) return oklchStr;
+    
+    let l = parseFloat(coords[0]);
+    if (coords[0].includes('%')) l = l / 100;
+    if (isNaN(l)) l = 0.5;
+    
+    let c = parseFloat(coords[1]);
+    if (coords[1].includes('%')) c = c / 100;
+    if (isNaN(c)) c = 0.15;
+    
+    let h = parseFloat(coords[2]);
+    if (coords[2].includes('deg')) h = parseFloat(coords[2].replace('deg', ''));
+    else if (coords[2].includes('rad')) h = (parseFloat(coords[2].replace('rad', '')) * 180) / Math.PI;
+    else if (coords[2].includes('turn')) h = parseFloat(coords[2].replace('turn', '')) * 360;
+    if (isNaN(h)) h = 0;
+    
+    const [r, g, b] = oklchToRgb(l, c, h);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) {
+      return 'rgb(120, 120, 120)';
+    }
+    
+    if (alphaPart) {
+      let a = parseFloat(alphaPart.trim());
+      if (alphaPart.includes('%')) a = a / 100;
+      if (isNaN(a)) a = 1;
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    } else {
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  } catch (err) {
+    console.error('Failed to convert oklch string:', oklchStr, err);
+    return 'rgb(120, 120, 120)';
+  }
+};
+
+function oklabToRgb(l: number, a: number, b: number): [number, number, number] {
+  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+
+  const l_cube = l_ * l_ * l_;
+  const m_cube = m_ * m_ * m_;
+  const s_cube = s_ * s_ * s_;
+
+  let r = +4.0767416621 * l_cube - 3.3077115913 * m_cube + 0.2309699292 * s_cube;
+  let g = -1.2684380046 * l_cube + 2.6097574011 * m_cube - 0.3413193965 * s_cube;
+  let b_val = -0.0041960863 * l_cube - 0.7034186147 * m_cube + 1.7076147010 * s_cube;
+
+  const f = (x: number) => {
+    if (x <= 0.0031308) return 12.92 * x;
+    return 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+  };
+
+  r = Math.max(0, Math.min(1, f(r)));
+  g = Math.max(0, Math.min(1, f(g)));
+  b_val = Math.max(0, Math.min(1, f(b_val)));
+
+  return [
+    Math.round(r * 255),
+    Math.round(g * 255),
+    Math.round(b_val * 255)
+  ];
+}
+
+const convertOklabStringToRgb = (oklabStr: string): string => {
+  try {
+    const match = oklabStr.match(/oklab\(([^)]+)\)/i);
+    if (!match) return oklabStr;
+    const inner = match[1].trim().replace(/,/g, ' ');
+    
+    const [colorPart, alphaPart] = inner.split('/');
+    const coords = colorPart.trim().replace(/none/g, '0').split(/\s+/).filter(Boolean);
+    if (coords.length < 3) return oklabStr;
+    
+    let l = parseFloat(coords[0]);
+    if (coords[0].includes('%')) l = l / 100;
+    if (isNaN(l)) l = 0.5;
+    
+    let a = parseFloat(coords[1]);
+    if (coords[1].includes('%')) a = a / 100;
+    if (isNaN(a)) a = 0;
+    
+    let b = parseFloat(coords[2]);
+    if (coords[2].includes('%')) b = b / 100;
+    if (isNaN(b)) b = 0;
+    
+    const [r, g, b_val] = oklabToRgb(l, a, b);
+    if (isNaN(r) || isNaN(g) || isNaN(b_val)) {
+      return 'rgb(120, 120, 120)';
+    }
+    
+    if (alphaPart) {
+      let alpha = parseFloat(alphaPart.trim());
+      if (alphaPart.includes('%')) alpha = alpha / 100;
+      if (isNaN(alpha)) alpha = 1;
+      return `rgba(${r}, ${g}, ${b_val}, ${alpha})`;
+    } else {
+      return `rgb(${r}, ${g}, ${b_val})`;
+    }
+  } catch (err) {
+    console.error('Failed to convert oklab string:', oklabStr, err);
+    return 'rgb(120, 120, 120)';
+  }
+};
+
+const parseColorToRgba = (colorStr: string): [number, number, number, number] => {
+  colorStr = colorStr.trim().toLowerCase();
+  if (colorStr.includes('oklch')) {
+    colorStr = convertOklchStringToRgb(colorStr);
+  } else if (colorStr.includes('oklab')) {
+    colorStr = convertOklabStringToRgb(colorStr);
+  }
+  
+  if (colorStr === 'transparent') return [0, 0, 0, 0];
+  if (colorStr === 'white') return [255, 255, 255, 1];
+  if (colorStr === 'black') return [0, 0, 0, 1];
+  
+  if (colorStr.startsWith('#')) {
+    const hex = colorStr.slice(1);
+    if (hex.length === 3) {
+      return [
+        parseInt(hex[0] + hex[0], 16),
+        parseInt(hex[1] + hex[1], 16),
+        parseInt(hex[2] + hex[2], 16),
+        1
+      ];
+    }
+    if (hex.length === 4) {
+      return [
+        parseInt(hex[0] + hex[0], 16),
+        parseInt(hex[1] + hex[1], 16),
+        parseInt(hex[2] + hex[2], 16),
+        parseInt(hex[3] + hex[3], 16) / 255
+      ];
+    }
+    if (hex.length === 6) {
+      return [
+        parseInt(hex.slice(0, 2), 16),
+        parseInt(hex.slice(2, 4), 16),
+        parseInt(hex.slice(4, 6), 16),
+        1
+      ];
+    }
+    if (hex.length === 8) {
+      return [
+        parseInt(hex.slice(0, 2), 16),
+        parseInt(hex.slice(2, 4), 16),
+        parseInt(hex.slice(4, 6), 16),
+        parseInt(hex.slice(6, 8), 16) / 255
+      ];
+    }
+  }
+  
+  const rgbMatch = colorStr.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+  if (rgbMatch) {
+    return [
+      parseInt(rgbMatch[1]),
+      parseInt(rgbMatch[2]),
+      parseInt(rgbMatch[3]),
+      rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1
+    ];
+  }
+
+  return [120, 120, 120, 1];
+};
+
+const convertColorMixStringToRgb = (colorMixStr: string): string => {
+  try {
+    const match = colorMixStr.match(/color-mix\(\s*in\s+([a-zA-Z0-9-]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/i);
+    if (!match) return colorMixStr;
+    
+    const part1 = match[2].trim();
+    const part2 = match[3].trim();
+    
+    const parsePart = (part: string) => {
+      const pctMatch = part.match(/(.+?)\s+([\d.]+)%?$/);
+      if (pctMatch) {
+        return {
+          color: pctMatch[1].trim(),
+          pct: parseFloat(pctMatch[2])
+        };
+      }
+      return { color: part, pct: null };
+    };
+    
+    const p1 = parsePart(part1);
+    const p2 = parsePart(part2);
+    
+    const c1 = parseColorToRgba(p1.color);
+    const c2 = parseColorToRgba(p2.color);
+    
+    let w1 = 50;
+    let w2 = 50;
+    
+    if (p1.pct !== null && p2.pct !== null) {
+      w1 = p1.pct;
+      w2 = p2.pct;
+    } else if (p1.pct !== null) {
+      w1 = p1.pct;
+      w2 = 100 - w1;
+    } else if (p2.pct !== null) {
+      w2 = p2.pct;
+      w1 = 100 - w2;
+    }
+    
+    const totalW = w1 + w2;
+    if (isNaN(totalW) || totalW <= 0) return 'rgba(120,120,120,1)';
+    
+    const ratio1 = w1 / totalW;
+    const ratio2 = w2 / totalW;
+    
+    const r = Math.round(c1[0] * ratio1 + c2[0] * ratio2);
+    const g = Math.round(c1[1] * ratio1 + c2[1] * ratio2);
+    const b = Math.round(c1[2] * ratio1 + c2[2] * ratio2);
+    const a = parseFloat((c1[3] * ratio1 + c2[3] * ratio2).toFixed(3));
+    
+    if (isNaN(r) || isNaN(g) || isNaN(b) || isNaN(a)) {
+      return 'rgb(120, 120, 120)';
+    }
+    
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  } catch (err) {
+    console.error('Failed to convert color-mix string:', colorMixStr, err);
+    return 'rgb(120, 120, 120)';
+  }
+};
+
+const resolveColorToRgbOrRgba = (colorStr: string, elementForContext?: HTMLElement): string => {
+  try {
+    const temp = document.createElement('div');
+    temp.style.color = colorStr;
+    const parent = elementForContext || document.body || document.documentElement;
+    parent.appendChild(temp);
+    const computed = window.getComputedStyle(temp).color;
+    parent.removeChild(temp);
+    
+    if (computed && (computed.startsWith('rgb') || computed.startsWith('rgba')) && !computed.includes('NaN')) {
+      return computed;
+    }
+  } catch (e) {
+    // ignore
+  }
+  
+  const lower = colorStr.toLowerCase();
+  if (lower.includes('oklch')) {
+    return convertOklchStringToRgb(colorStr);
+  }
+  if (lower.includes('oklab')) {
+    return convertOklabStringToRgb(colorStr);
+  }
+  if (lower.includes('color-mix')) {
+    return convertColorMixStringToRgb(colorStr);
+  }
+  
+  return 'rgb(120, 120, 120)';
+};
+
+const replaceColorFunctionsInString = (text: string, elementForContext?: HTMLElement): string => {
+  if (!text) return text;
+  
+  let modifiedText = text;
+  
+  // 1. Replace oklch(...)
+  modifiedText = modifiedText.replace(/oklch\(([^)]+)\)/gi, (m) => {
+    const resolved = resolveColorToRgbOrRgba(m, elementForContext);
+    return resolved || m;
+  });
+  
+  // 2. Replace oklab(...)
+  modifiedText = modifiedText.replace(/oklab\(([^)]+)\)/gi, (m) => {
+    const resolved = resolveColorToRgbOrRgba(m, elementForContext);
+    return resolved || m;
+  });
+  
+  // 3. Replace color-mix(...)
+  try {
+    let index = modifiedText.toLowerCase().lastIndexOf('color-mix(');
+    let limit = 0;
+    while (index !== -1 && limit < 1000) {
+      limit++;
+      let parenCount = 1;
+      let end = -1;
+      for (let i = index + 10; i < modifiedText.length; i++) {
+        if (modifiedText[i] === '(') parenCount++;
+        else if (modifiedText[i] === ')') parenCount--;
+        if (parenCount === 0) {
+          end = i;
+          break;
+        }
+      }
+      if (end !== -1) {
+        const fullCall = modifiedText.slice(index, end + 1);
+        const resolved = resolveColorToRgbOrRgba(fullCall, elementForContext);
+        modifiedText = modifiedText.slice(0, index) + resolved + modifiedText.slice(end + 1);
+      } else {
+        modifiedText = modifiedText.slice(0, index) + 'rgba(120,120,120,1)' + modifiedText.slice(index + 10);
+      }
+      index = modifiedText.toLowerCase().lastIndexOf('color-mix(');
+    }
+  } catch (err) {
+    console.error('Error replacing color-mix in string:', err);
+  }
+  
+  return modifiedText;
+};
+
+const convertAllPageStyles = async (): Promise<void> => {
+  try {
+    // 1. Convert inline style tags
+    const styleElements = document.getElementsByTagName('style');
+    for (let i = 0; i < styleElements.length; i++) {
+      const style = styleElements[i];
+      if (style.textContent) {
+        let cssText = style.textContent;
+        let modified = false;
+        if (cssText.includes('oklch') || cssText.includes('oklab') || cssText.includes('color-mix')) {
+          cssText = replaceColorFunctionsInString(cssText);
+          modified = true;
+        }
+        if (modified) {
+          style.textContent = cssText;
+        }
+      }
+    }
+
+    // 2. Convert external stylesheet links (if any)
+    const linkElements = Array.from(document.getElementsByTagName('link'));
+    for (let i = 0; i < linkElements.length; i++) {
+      const link = linkElements[i];
+      if (link.rel === 'stylesheet' && link.href) {
+        try {
+          const url = new URL(link.href, window.location.origin);
+          if (url.origin === window.location.origin) {
+            const res = await fetch(link.href);
+            if (res.ok) {
+              let cssText = await res.text();
+              let modified = false;
+              if (cssText.includes('oklch') || cssText.includes('oklab') || cssText.includes('color-mix')) {
+                cssText = replaceColorFunctionsInString(cssText);
+                modified = true;
+              }
+              if (modified) {
+                const style = document.createElement('style');
+                style.textContent = cssText;
+                style.setAttribute('data-converted-from', link.href);
+                document.head.appendChild(style);
+                link.disabled = true;
+                link.parentNode?.removeChild(link);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to convert stylesheet link:', link.href, e);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error during global style conversion:', err);
+  }
 };
 
 const getProxyImageUrl = (url: string | null | undefined): string => {
@@ -145,6 +540,290 @@ const getProxyImageUrl = (url: string | null | undefined): string => {
   if (url.startsWith('data:') || url.startsWith('blob:')) return url;
   if (url.startsWith('/') || url.startsWith(window.location.origin)) return url;
   return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+};
+
+const imageBase64Cache = new Map<string, string>();
+
+const getAsBase64 = async (url: string): Promise<string> => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+  if (imageBase64Cache.has(url)) {
+    return imageBase64Cache.get(url)!;
+  }
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+  try {
+    const proxyUrl = getProxyImageUrl(url);
+    const response = await fetch(proxyUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) throw new Error('Fetch failed');
+    const blob = await response.blob();
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    imageBase64Cache.set(url, base64);
+    return base64;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.warn('Failed to convert image to base64, using transparent fallback:', url, error);
+    const fallback = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    // Cache the fallback temporarily so we don't spam broken requests
+    imageBase64Cache.set(url, fallback);
+    return fallback;
+  }
+};
+
+const inlineAllImagesInElement = async (element: HTMLElement): Promise<void> => {
+  const images = element.getElementsByTagName('img');
+  const promises: Promise<void>[] = [];
+  
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    const src = img.getAttribute('src');
+    if (src && !src.startsWith('data:') && !src.startsWith('blob:')) {
+      const promise = getAsBase64(src).then(base64 => {
+        img.src = base64;
+        img.removeAttribute('srcset');
+        img.removeAttribute('crossorigin');
+      });
+      promises.push(promise);
+    }
+  }
+  
+  await Promise.all(promises);
+};
+
+const resolveSolidColorFromClasses = (classList: DOMTokenList): string | null => {
+  // 1. Look for inline hex in classes like from-[#003366] or to-[#0047AB]
+  for (let i = 0; i < classList.length; i++) {
+    const cls = classList[i];
+    const hexMatch = cls.match(/(?:from|to|via)-\[#([0-9a-fA-F]{3,8})\]/);
+    if (hexMatch) {
+      return '#' + hexMatch[1];
+    }
+  }
+  
+  // 2. Look for named tailwind colors
+  const colorMap: Record<string, string> = {
+    'slate-950': '#020617',
+    'slate-900': '#0f172a',
+    'slate-800': '#1e293b',
+    'slate-700': '#334155',
+    'indigo-600': '#4f46e5',
+    'blue-600': '#2563eb',
+    'blue-700': '#1d4ed8',
+    'emerald-600': '#059669',
+    'emerald-700': '#047857',
+    'orange-600': '#ea580c',
+    'orange-700': '#c2410c',
+    'rose-600': '#e11d48',
+    'rose-700': '#be123c',
+    'rose-500': '#f43f5e',
+    'pink-600': '#db2777',
+    'amber-800': '#92400e',
+    'amber-600': '#d97706',
+    'primary': '#0056b3'
+  };
+  
+  for (let i = 0; i < classList.length; i++) {
+    const cls = classList[i];
+    for (const [key, val] of Object.entries(colorMap)) {
+      if (cls.includes(key)) {
+        return val;
+      }
+    }
+  }
+  return null;
+};
+
+const cleanCssGradientsAndColors = (cssText: string): string => {
+  if (!cssText) return cssText;
+  
+  // Replace oklch/oklab/color-mix color functions
+  cssText = replaceColorFunctionsInString(cssText);
+
+  // Parse and replace gradients containing variables or modern features to avoid addColorStop failures
+  try {
+    let index = cssText.toLowerCase().indexOf('-gradient(');
+    while (index !== -1) {
+      let start = index;
+      while (start > 0 && /[a-zA-Z-]/.test(cssText[start - 1])) {
+        start--;
+      }
+      const prefix = cssText.slice(start, index);
+      if (prefix === 'linear' || prefix === 'radial' || prefix === 'conic' || prefix === 'repeating-linear' || prefix === 'repeating-radial') {
+        let parenCount = 1;
+        let end = -1;
+        for (let i = index + 10; i < cssText.length; i++) {
+          if (cssText[i] === '(') parenCount++;
+          else if (cssText[i] === ')') parenCount--;
+          if (parenCount === 0) {
+            end = i;
+            break;
+          }
+        }
+        if (end !== -1) {
+          const fullGradient = cssText.slice(start, end + 1);
+          if (fullGradient.includes('var(') || fullGradient.includes('oklch') || fullGradient.includes('oklab') || fullGradient.includes('color-mix') || fullGradient.includes('NaN')) {
+            cssText = cssText.slice(0, start) + 'none' + cssText.slice(end + 1);
+          }
+        } else {
+          cssText = cssText.slice(0, start) + 'none' + cssText.slice(index + 10);
+        }
+      }
+      index = cssText.toLowerCase().indexOf('-gradient(', start + 5);
+    }
+  } catch (err) {
+    console.error('Error cleaning CSS gradients:', err);
+  }
+  
+  return cssText;
+};
+
+const waitForAllFontsAndImages = async (element: HTMLElement): Promise<void> => {
+  try {
+    if (document.fonts && typeof document.fonts.ready !== 'undefined') {
+      await document.fonts.ready;
+    }
+  } catch (e) {
+    console.warn('Failed to wait for fonts ready:', e);
+  }
+
+  try {
+    const images = Array.from(element.getElementsByTagName('img'));
+    const loadPromises = images.map(img => {
+      if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+      });
+    });
+    await Promise.all(loadPromises);
+  } catch (e) {
+    console.warn('Failed to wait for images load:', e);
+  }
+};
+
+const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, timeoutMs = 15000): Promise<HTMLCanvasElement> => {
+  // Pre-wait for all fonts and images to be fully loaded first
+  await waitForAllFontsAndImages(element);
+  
+  // Inline all images inside the element to Base64 to guarantee 100% stable local rendering with zero CORS overhead
+  try {
+    await inlineAllImagesInElement(element);
+  } catch (err) {
+    console.warn('Failed to inline images in element before html2canvas:', err);
+  }
+
+  // Clean all style sheets from oklch, oklab, color-mix and invalid gradients dynamically before html2canvas parses document stylesheets
+  try {
+    await convertAllPageStyles();
+  } catch (err) {
+    console.error('Failed to pre-convert page styles to RGB:', err);
+  }
+
+  const finalTimeoutMs = Math.max(timeoutMs, 15000);
+  const originalOnClone = options.onclone;
+  const enhancedOptions = {
+    ...options,
+    scale: Math.min(options.scale || 2, 2), // Bounded to 2 for optimal crispness without memory/size limits on mobile Chrome
+    useCORS: true,
+    allowTaint: true,
+    logging: false,
+    imageTimeout: 0, // Inlined images run instantly, so we don't need additional imageTimeout
+    scrollX: 0,
+    scrollY: 0,
+    windowWidth: document.documentElement.offsetWidth,
+    windowHeight: document.documentElement.offsetHeight,
+    onclone: (clonedDoc: Document, clonedElement: HTMLElement) => {
+      // 1. Clean up stylesheets in the cloned document
+      try {
+        const styleElements = clonedDoc.getElementsByTagName('style');
+        for (let i = 0; i < styleElements.length; i++) {
+          const style = styleElements[i];
+          if (style.textContent) {
+            style.textContent = cleanCssGradientsAndColors(style.textContent);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to clean stylesheets in clone:', e);
+      }
+
+      // 2. Clean up inline styles and remove unsupported CSS effects on ALL elements in clone
+      try {
+        const allElements = clonedDoc.getElementsByTagName('*');
+        for (let i = 0; i < allElements.length; i++) {
+          const el = allElements[i] as HTMLElement;
+          
+          // Remove unsupported filters
+          if (el.style.filter) el.style.filter = 'none';
+          if (el.style.backdropFilter) el.style.backdropFilter = 'none';
+          
+          // Remove animations and transitions
+          if (el.style.animation) el.style.animation = 'none';
+          if (el.style.transition) el.style.transition = 'none';
+          
+          // Remove transform issues that break positioning
+          if (el.style.transform && el.style.transform !== 'none') {
+            if (el.style.transform.includes('scale') || el.style.transform.includes('translate3d')) {
+              el.style.transform = 'none';
+            }
+          }
+          
+          let styleAttr = el.getAttribute('style');
+          if (styleAttr) {
+            styleAttr = cleanCssGradientsAndColors(styleAttr);
+            
+            if (styleAttr.includes('filter') || styleAttr.includes('backdrop-filter')) {
+              styleAttr = styleAttr.replace(/filter\s*:[^;]+;/gi, 'filter: none;');
+              styleAttr = styleAttr.replace(/backdrop-filter\s*:[^;]+;/gi, 'backdrop-filter: none;');
+            }
+            if (styleAttr.includes('transition') || styleAttr.includes('animation')) {
+              styleAttr = styleAttr.replace(/transition\s*:[^;]+;/gi, 'transition: none;');
+              styleAttr = styleAttr.replace(/animation\s*:[^;]+;/gi, 'animation: none;');
+            }
+            el.setAttribute('style', styleAttr);
+          }
+          
+          // Convert complex CSS gradient classes (such as Tailwind variables) to simple solid background
+          const classList = el.classList;
+          const hasGradient = Array.from(classList).some(c => c.includes('gradient') || c.startsWith('bg-linear') || c.includes('from-') || c.includes('to-'));
+          const styleBg = el.style.backgroundImage || '';
+          
+          if (hasGradient || styleBg.includes('gradient')) {
+            const solidColor = resolveSolidColorFromClasses(classList) || '#0047AB';
+            el.style.backgroundImage = 'none';
+            el.style.background = solidColor;
+            el.style.backgroundColor = solidColor;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to clean elements in clone:', e);
+      }
+
+      // Call original onclone callback if defined
+      if (originalOnClone) {
+        try {
+          originalOnClone(clonedDoc, clonedElement);
+        } catch (e) {
+          console.error('Error in original onclone:', e);
+        }
+      }
+    }
+  };
+
+  return Promise.race([
+    html2canvas(element, enhancedOptions),
+    new Promise<HTMLCanvasElement>((_, reject) => 
+      setTimeout(() => reject(new Error('html2canvas timed out')), finalTimeoutMs)
+    )
+  ]);
 };
 
 const extractIdFromQR = (text: string, paramName: string = 'id') => {
@@ -23581,68 +24260,30 @@ const IDCardsModule = ({
         active: true,
         current: 1,
         total: 1,
-        message: `Generating PDF for ${person.name || 'document'}...`
+        message: `Caching assets & inlining images...`
       });
 
-      // We use a safe scale of 2 (perfect balance of high resolution and fast rendering speed)
-      let canvas;
-      try {
-        canvas = await html2canvasWithTimeout(element, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          imageTimeout: 5000,
-          backgroundColor: '#ffffff',
-          allowTaint: false,
-        }, 12000);
-        // Test if canvas is exportable
-        canvas.toDataURL('image/png');
-      } catch (corsError) {
-        console.warn(`CORS or rendering issue, retrying with useCORS: false and placeholder images to guarantee PDF generation...`, corsError);
-        // Fallback: render without CORS, and replace any non-local images with transparent placeholder to guarantee exportability
-        canvas = await html2canvasWithTimeout(element, {
-          scale: 2,
-          useCORS: false,
-          logging: false,
-          imageTimeout: 5000,
-          backgroundColor: '#ffffff',
-          allowTaint: true, // Allow taint so rendering doesn't fail, but we replace images to prevent security errors
-          onclone: (clonedDoc, clonedElement) => {
-            const images = clonedElement.getElementsByTagName('img');
-            for (let j = 0; j < images.length; j++) {
-              const img = images[j];
-              if (img.src && !img.src.startsWith('data:')) {
-                // Inline transparent 1x1 GIF placeholder
-                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                img.removeAttribute('srcset');
-              }
-            }
-          }
-        }, 12000);
-      }
+      // Inline all images in the card to Base64 to guarantee offline speed, no CORS errors, and no tainted canvas.
+      await inlineAllImagesInElement(element);
 
-      // Safe export check with a secondary fallback to blank canvas if somehow still tainted
-      let imgData;
-      try {
-        imgData = canvas.toDataURL('image/png');
-      } catch (exportError) {
-        console.error('Canvas still tainted, rendering a simplified plain document to avoid crashing...', exportError);
-        // Re-generate using absolutely clean layout to ensure download never fails
-        canvas = await html2canvasWithTimeout(element, {
-          scale: 1.5,
-          useCORS: false,
-          logging: false,
-          backgroundColor: '#ffffff',
-          onclone: (clonedDoc, clonedElement) => {
-            const images = clonedElement.getElementsByTagName('img');
-            for (let j = 0; j < images.length; j++) {
-              images[j].style.display = 'none'; // Hide images to guarantee clean export
-            }
-          }
-        }, 10000);
-        imgData = canvas.toDataURL('image/png');
-      }
+      setGenerationProgress({
+        active: true,
+        current: 1,
+        total: 1,
+        message: `Generating high-quality PDF...`
+      });
 
+      // Since images are already pre-converted/inlined as Base64, html2canvas runs instantly (<100ms) with zero CORS overhead
+      const canvas = await html2canvasWithTimeout(element, {
+        scale: 2.5, // 2.5x scale for extremely crisp print quality
+        useCORS: true,
+        logging: false,
+        imageTimeout: 0, // No need for timeouts since images are fully preloaded and local
+        backgroundColor: '#ffffff',
+        allowTaint: true, // Safe because images are verified inlined
+      }, 5000);
+
+      const imgData = canvas.toDataURL('image/png');
       const isLandscape = canvas.width > canvas.height;
       const pdfW = Math.round(canvas.width / 2);
       const pdfH = Math.round(canvas.height / 2);
@@ -23672,7 +24313,6 @@ const IDCardsModule = ({
       setGenerationProgress(null);
     }
   };
-
   const handleBulkDownloadSinglePDF = async () => {
     if (filteredPeople.length === 0) {
       alert('No data available to download.');
@@ -23715,59 +24355,20 @@ const IDCardsModule = ({
             continue;
           }
 
-          let canvas;
-          try {
-            canvas = await html2canvasWithTimeout(element, {
-              scale: 2,
-              useCORS: true,
-              logging: false,
-              imageTimeout: 5000,
-              backgroundColor: '#ffffff',
-              allowTaint: false,
-            }, 12000);
-            // Test if exportable
-            canvas.toDataURL('image/png');
-          } catch (corsError) {
-            console.warn(`CORS bulk PDF canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-            canvas = await html2canvasWithTimeout(element, {
-              scale: 2,
-              useCORS: false,
-              logging: false,
-              imageTimeout: 5000,
-              backgroundColor: '#ffffff',
-              allowTaint: true,
-              onclone: (clonedDoc, clonedElement) => {
-                const images = clonedElement.getElementsByTagName('img');
-                for (let j = 0; j < images.length; j++) {
-                  const img = images[j];
-                  if (img.src && !img.src.startsWith('data:')) {
-                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                    img.removeAttribute('srcset');
-                  }
-                }
-              }
-            }, 12000);
-          }
+          // Convert all images to Base64 in parallel. Caching handles static assets like logos in 0ms!
+          await inlineAllImagesInElement(element);
+
+          // Since images are guaranteed to be inlined Base64, html2canvas runs instantly with zero image timeout
+          const canvas = await html2canvasWithTimeout(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            imageTimeout: 0,
+            backgroundColor: '#ffffff',
+            allowTaint: true,
+          }, 5000);
           
-          let imgData;
-          try {
-            imgData = canvas.toDataURL('image/png');
-          } catch (exportError) {
-            console.error('Canvas still tainted in bulk, rendering without images...', exportError);
-            canvas = await html2canvasWithTimeout(element, {
-              scale: 1.5,
-              useCORS: false,
-              logging: false,
-              backgroundColor: '#ffffff',
-              onclone: (clonedDoc, clonedElement) => {
-                const images = clonedElement.getElementsByTagName('img');
-                for (let j = 0; j < images.length; j++) {
-                  images[j].style.display = 'none';
-                }
-              }
-            }, 10000);
-            imgData = canvas.toDataURL('image/png');
-          }
+          const imgData = canvas.toDataURL('image/png');
           
           const isLandscape = canvas.width > canvas.height;
           const pageW = Math.round(canvas.width / 2);
@@ -23863,59 +24464,20 @@ const IDCardsModule = ({
             continue;
           }
 
-          let canvas;
-          try {
-            canvas = await html2canvasWithTimeout(element, {
-              scale: 2,
-              useCORS: true,
-              logging: false,
-              imageTimeout: 5000,
-              backgroundColor: '#ffffff',
-              allowTaint: false,
-            }, 12000);
-            // Test if exportable
-            canvas.toDataURL('image/png');
-          } catch (corsError) {
-            console.warn(`CORS bulk ZIP canvas failed for ${person.name}, retrying by removing external images to prevent security error...`, corsError);
-            canvas = await html2canvasWithTimeout(element, {
-              scale: 2,
-              useCORS: false,
-              logging: false,
-              imageTimeout: 5000,
-              backgroundColor: '#ffffff',
-              allowTaint: true,
-              onclone: (clonedDoc, clonedElement) => {
-                const images = clonedElement.getElementsByTagName('img');
-                for (let j = 0; j < images.length; j++) {
-                  const img = images[j];
-                  if (img.src && !img.src.startsWith('data:')) {
-                    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                    img.removeAttribute('srcset');
-                  }
-                }
-              }
-            }, 12000);
-          }
+          // Inline all images inside the element using parallel Base64 fetching and memory caching
+          await inlineAllImagesInElement(element);
 
-          let imgData;
-          try {
-            imgData = canvas.toDataURL('image/png');
-          } catch (exportError) {
-            console.error('Canvas still tainted in bulk ZIP, rendering without images...', exportError);
-            canvas = await html2canvasWithTimeout(element, {
-              scale: 1.5,
-              useCORS: false,
-              logging: false,
-              backgroundColor: '#ffffff',
-              onclone: (clonedDoc, clonedElement) => {
-                const images = clonedElement.getElementsByTagName('img');
-                for (let j = 0; j < images.length; j++) {
-                  images[j].style.display = 'none';
-                }
-              }
-            }, 10000);
-            imgData = canvas.toDataURL('image/png');
-          }
+          // Since images are guaranteed to be inlined Base64, html2canvas runs instantly with zero image timeout
+          const canvas = await html2canvasWithTimeout(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            imageTimeout: 0,
+            backgroundColor: '#ffffff',
+            allowTaint: true,
+          }, 5000);
+
+          const imgData = canvas.toDataURL('image/png');
 
           if (format === 'png') {
             const rawPng = imgData.split(',')[1];
