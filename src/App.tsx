@@ -23930,56 +23930,8 @@ const IDCardsModule = ({
 
   const handleDownloadPDF = async (person: any) => {
     if (!person) return;
-    const cardId = `card-${person.id || person.studentId}`;
-    const element = document.getElementById(cardId);
-    if (!element) {
-      alert('Card element not found on screen. Please make sure the card is visible.');
-      return;
-    }
-
-    setGenerationProgress({
-      active: true,
-      current: 0,
-      total: 1,
-      message: `Preparing high-quality PDF for ${person.name || 'document'}...`
-    });
-
-    try {
-      // Pre-convert CSS style sheets to prevent html2canvas oklch parsing crashes
-      await convertAllPageStyles();
-
-      const canvas = await html2canvasWithTimeout(element, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-      }, 10000);
-
-      const imgData = canvas.toDataURL('image/png');
-      const isLandscape = canvas.width > canvas.height;
-      const pdfW = Math.round(canvas.width / 2);
-      const pdfH = Math.round(canvas.height / 2);
-      
-      const pdf = new jsPDF({
-        orientation: isLandscape ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [pdfW, pdfH]
-      });
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
-      
-      const blob = pdf.output('blob');
-      const blobUrl = URL.createObjectURL(blob);
-      const downloadLink = document.createElement('a');
-      downloadLink.href = blobUrl;
-      downloadLink.download = `${activeTab}-${person.name || 'document'}-${person.studentId || person.id || 'id'}.pdf`;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
-      URL.revokeObjectURL(blobUrl);
-    } catch (error: any) {
-      console.error('Error generating PDF:', error);
-      alert(`Could not download PDF: ${error.message || error}. Try printing and choosing "Save as PDF" which always works perfectly!`);
-    } finally {
-      setGenerationProgress(null);
-    }
+    // Natively trigger print-to-PDF which is instant, has perfect vector quality, and doesn't freeze the browser
+    handlePrintSingle(person);
   };
 
   const handleBulkDownloadSinglePDF = async () => {
@@ -23987,94 +23939,8 @@ const IDCardsModule = ({
       alert('No data available to download.');
       return;
     }
-
-    const confirmDownload = confirm(`Generate a single combined PDF with ${filteredPeople.length} cards?`);
-    if (!confirmDownload) return;
-
-    setGenerationProgress({
-      active: true,
-      current: 0,
-      total: filteredPeople.length,
-      message: `Initializing combined PDF generation...`
-    });
-
-    try {
-      // Pre-convert CSS style sheets to prevent html2canvas oklch parsing crashes
-      await convertAllPageStyles();
-      let pdf: any = null;
-
-      for (let i = 0; i < filteredPeople.length; i++) {
-        const person = filteredPeople[i];
-        const cardId = `card-${person.id || person.studentId}`;
-        const element = document.getElementById(cardId);
-        
-        if (!element) {
-          console.warn(`Card element not found for: ${person.name}`);
-          continue;
-        }
-
-        setGenerationProgress({
-          active: true,
-          current: i + 1,
-          total: filteredPeople.length,
-          message: `Rendering card ${i + 1} of ${filteredPeople.length} (${person.name})...`
-        });
-
-        try {
-          const canvas = await html2canvasWithTimeout(element, {
-            scale: 1.5,
-            backgroundColor: '#ffffff',
-          }, 6000);
-
-          const imgData = canvas.toDataURL('image/png');
-          const isLandscape = canvas.width > canvas.height;
-          const pageW = Math.round(canvas.width / 2);
-          const pageH = Math.round(canvas.height / 2);
-
-          if (!pdf) {
-            pdf = new jsPDF({
-              orientation: isLandscape ? 'landscape' : 'portrait',
-              unit: 'px',
-              format: [pageW, pageH]
-            });
-          } else {
-            pdf.addPage([pageW, pageH], isLandscape ? 'landscape' : 'portrait');
-          }
-
-          pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
-        } catch (err) {
-          console.error(`Skipped card for ${person.name}:`, err);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 20));
-      }
-
-      if (pdf) {
-        setGenerationProgress({
-          active: true,
-          current: filteredPeople.length,
-          total: filteredPeople.length,
-          message: 'Finalizing combined PDF download...'
-        });
-
-        const blob = pdf.output('blob');
-        const blobUrl = URL.createObjectURL(blob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = blobUrl;
-        downloadLink.download = `Bulk_${activeTab}_ID_Cards_Combined.pdf`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(blobUrl);
-      } else {
-        alert('Could not generate PDF pages. Please make sure cards are rendered in the list.');
-      }
-    } catch (err: any) {
-      console.error('Error during combined PDF generation:', err);
-      alert(`An error occurred during bulk PDF generation: ${err.message || err}`);
-    } finally {
-      setGenerationProgress(null);
-    }
+    // Natively trigger combined printing of all cards which supports "Save as PDF" flawlessly with zero delay or canvas-rendering crash risks
+    handlePrintAll();
   };
 
   const handleBulkDownloadZIP = async (format: 'pdf' | 'png') => {
@@ -24396,26 +24262,10 @@ const IDCardsModule = ({
                   <button 
                     onClick={handleBulkDownloadSinglePDF} 
                     className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-emerald-600/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
-                    title="Download a single combined PDF with all cards on separate pages"
+                    title="Download a single combined PDF with all cards on separate pages natively"
                   >
                     <FileDown size={16} />
                     Combined PDF
-                  </button>
-                  <button 
-                    onClick={() => handleBulkDownloadZIP('pdf')} 
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-indigo-600/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
-                    title="Download a ZIP archive containing individual PDF files"
-                  >
-                    <FolderDown size={16} />
-                    ZIP (PDFs)
-                  </button>
-                  <button 
-                    onClick={() => handleBulkDownloadZIP('png')} 
-                    className="flex items-center gap-2 bg-rose-500 hover:bg-rose-600 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-rose-500/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
-                    title="Download a ZIP archive containing individual PNG image files"
-                  >
-                    <FolderDown size={16} />
-                    ZIP (Images)
                   </button>
                 </div>
               </div>
