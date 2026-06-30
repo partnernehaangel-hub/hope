@@ -100,6 +100,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { toPng, toJpeg } from 'html-to-image';
 import * as JSZipModule from 'jszip';
 const JSZip = ((JSZipModule as any).default || JSZipModule) as any;
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
@@ -834,13 +835,16 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
     };
 
     try {
+      const width = element.offsetWidth || 325;
+      const height = element.offsetHeight || 512;
+
       // 1. Create a hidden iframe
       iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0';
       iframe.style.bottom = '0';
-      iframe.style.width = element.offsetWidth + 'px';
-      iframe.style.height = element.offsetHeight + 'px';
+      iframe.style.width = width + 'px';
+      iframe.style.height = height + 'px';
       iframe.style.border = '0';
       iframe.style.opacity = '0';
       iframe.style.pointerEvents = 'none';
@@ -856,20 +860,33 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
       
       // 2. Clone the element and clean up its styles
       const cloned = element.cloneNode(true) as HTMLElement;
-      cloned.style.display = 'block';
-      cloned.style.visibility = 'visible';
-      cloned.style.opacity = '1';
-      cloned.style.transform = 'none';
-      cloned.style.margin = '0';
       
       // Copy computed styles from original element to clone to preserve all resolved oklch colors & custom styling
       copyComputedStylesToClone(element, cloned);
+
+      // Force-override layout styles on the cloned root element to guarantee it aligns exactly at (0, 0) inside the iframe body
+      cloned.style.setProperty('position', 'relative', 'important');
+      cloned.style.setProperty('top', '0', 'important');
+      cloned.style.setProperty('left', '0', 'important');
+      cloned.style.setProperty('margin', '0', 'important');
+      cloned.style.setProperty('transform', 'none', 'important');
+      cloned.style.setProperty('display', 'block', 'important');
+      cloned.style.setProperty('visibility', 'visible', 'important');
+      cloned.style.setProperty('opacity', '1', 'important');
       
       // 3. Write basic HTML structure to iframe with base URL to resolve relative images/stylesheets
       iframeDoc.open();
       iframeDoc.write(`<!DOCTYPE html><html><head><base href="${window.location.origin}/"><title>Print Isolation</title></head><body></body></html>`);
       iframeDoc.close();
       
+      // Style the iframe body to have absolute zero spacing and hide overflow
+      if (iframeDoc.body) {
+        iframeDoc.body.style.margin = '0';
+        iframeDoc.body.style.padding = '0';
+        iframeDoc.body.style.overflow = 'hidden';
+        iframeDoc.body.style.backgroundColor = '#ffffff';
+      }
+
       // Override styleSheets property on the iframe's document object.
       // This prevents html2canvas from scanning and parsing the stylesheets (which contain modern, unsupported oklch color values and other custom syntax that crashes the html2canvas parser).
       // Since we recursively inlined computed styles and browser resolves oklch to standard rgb, html2canvas renders perfectly and is much faster.
@@ -912,15 +929,15 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
         allowTaint: false,
         backgroundColor: '#ffffff',
         logging: false,
-        foreignObjectRendering: true,
+        foreignObjectRendering: false, // Set to false to avoid SVG sandbox issues that yield blank renders
         imageTimeout: 30000,
         removeContainer: true,
         scrollX: 0,
         scrollY: 0,
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-        windowWidth: element.offsetWidth,
-        windowHeight: element.offsetHeight,
+        width: width,
+        height: height,
+        windowWidth: width,
+        windowHeight: height,
         onclone: (clonedDoc: Document, clonedEl: HTMLElement) => {
           // Call original onclone if any
           if (originalOnClone) {
@@ -24217,17 +24234,20 @@ const IDCardsModule = ({
       // 3. Briefly wait to allow QR Code canvas/SVG rendering and Base64 source loads to settle in the browser DOM
       await new Promise(resolve => setTimeout(resolve, 400));
 
-      // 4. Render canvas with high-quality scale of Math.max(window.devicePixelRatio || 1, 4)
-      const scale = Math.max(window.devicePixelRatio || 1, 4);
-      const canvas = await html2canvasWithTimeout(element, {
-        scale,
+      // 4. Render high-resolution JPEG image using robust toJpeg from html-to-image (100% compatible with Tailwind CSS v4)
+      const isLandscape = orientation === 'landscape';
+      const imgData = await toJpeg(element, {
+        quality: 0.98,
+        pixelRatio: 3, // 3x scale provides crisp, pixel-perfect text borders and high-quality graphics
         backgroundColor: '#ffffff',
-      }, 30000);
+        style: {
+          transform: 'none',
+          margin: '0',
+          padding: '0',
+        },
+        cacheBust: true,
+      });
 
-      // 5. Generate high-quality JPEG image
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
-      const isLandscape = canvas.width > canvas.height;
-      
       // Standard CR80 Size (85.6 mm x 53.98 mm) formatted to exactly 85 mm x 54 mm (8.5 cm x 5.4 cm)
       const pdfW = isLandscape ? 85 : 54;
       const pdfH = isLandscape ? 54 : 85;
@@ -24239,7 +24259,7 @@ const IDCardsModule = ({
         compress: false // Lossless PDF configuration
       });
       
-      // Render JPEG onto PDF with lossless quality
+      // Render JPEG onto PDF with lossless quality matching its signature format perfectly
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH, undefined, 'NONE');
       
       const blob = pdf.output('blob');
