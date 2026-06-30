@@ -487,7 +487,7 @@ const getAsBase64 = async (url: string): Promise<string> => {
   }
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased timeout to 30s to allow stable loading of high-quality assets
 
   try {
     const proxyUrl = getProxyImageUrl(url);
@@ -512,6 +512,47 @@ const getAsBase64 = async (url: string): Promise<string> => {
     imageBase64Cache.set(url, fallback);
     return fallback;
   }
+};
+
+// High-fidelity Font Preloading Utility
+const preloadFonts = async (fontNames: string[] = ['Inter', 'Space Grotesk', 'JetBrains Mono', 'Playfair Display']): Promise<void> => {
+  if (!document.fonts) return;
+  try {
+    const loadPromises = fontNames.map(font => {
+      try {
+        return document.fonts.load(`1em ${font}`);
+      } catch (e) {
+        return Promise.resolve(null);
+      }
+    });
+    await Promise.all(loadPromises);
+    await document.fonts.ready;
+  } catch (err) {
+    console.warn('Font preloading warning:', err);
+  }
+};
+
+// Robust Preload Image with Retries Utility to guarantee images never disappear
+const preloadImageWithRetry = async (url: string, retries = 3, delay = 1000): Promise<string> => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+  
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const base64 = await getAsBase64(url);
+      if (base64 && !base64.startsWith('data:image/gif')) {
+        return base64;
+      }
+      throw new Error('Transparent or empty fallback returned');
+    } catch (err) {
+      if (attempt === retries) {
+        console.error(`Failed to preload image after ${retries} attempts: ${url}`, err);
+        return url; // fallback to original
+      }
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  return url;
 };
 
 const inlineAllImagesInElement = async (element: HTMLElement): Promise<void> => {
@@ -690,40 +731,40 @@ const copyComputedStylesToClone = (original: HTMLElement, clone: HTMLElement) =>
   try {
     const computed = window.getComputedStyle(original);
     
-    // Copy key visual styles
-    if (computed.backgroundColor && computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && computed.backgroundColor !== 'transparent') {
-      clone.style.backgroundColor = computed.backgroundColor;
-    }
-    if (computed.color) {
-      clone.style.color = computed.color;
-    }
-    
-    // Copy borders
-    if (computed.borderTopColor) clone.style.borderTopColor = computed.borderTopColor;
-    if (computed.borderRightColor) clone.style.borderRightColor = computed.borderRightColor;
-    if (computed.borderBottomColor) clone.style.borderBottomColor = computed.borderBottomColor;
-    if (computed.borderLeftColor) clone.style.borderLeftColor = computed.borderLeftColor;
-    
-    if (computed.borderTopWidth) clone.style.borderTopWidth = computed.borderTopWidth;
-    if (computed.borderRightWidth) clone.style.borderRightWidth = computed.borderRightWidth;
-    if (computed.borderBottomWidth) clone.style.borderBottomWidth = computed.borderBottomWidth;
-    if (computed.borderLeftWidth) clone.style.borderLeftWidth = computed.borderLeftWidth;
-    
-    if (computed.borderTopStyle) clone.style.borderTopStyle = computed.borderTopStyle;
-    if (computed.borderRightStyle) clone.style.borderRightStyle = computed.borderRightStyle;
-    if (computed.borderBottomStyle) clone.style.borderBottomStyle = computed.borderBottomStyle;
-    if (computed.borderLeftStyle) clone.style.borderLeftStyle = computed.borderLeftStyle;
-    
-    if (computed.borderRadius) clone.style.borderRadius = computed.borderRadius;
-    
-    // Gradients & background images
-    const bgImage = computed.backgroundImage;
-    if (bgImage && bgImage !== 'none') {
-      if (bgImage.includes('oklch')) {
-        clone.style.backgroundImage = cleanCssGradientsAndColors(bgImage);
-      } else {
-        clone.style.backgroundImage = bgImage;
+    // Copy all layout, spacing, sizing, typography, and visual properties
+    const keys = [
+      'display', 'position', 'top', 'right', 'bottom', 'left', 'zIndex',
+      'flexDirection', 'flexWrap', 'flexGrow', 'flexShrink', 'flexBasis', 'alignItems', 'alignSelf', 'justifyContent', 'gap',
+      'gridTemplateColumns', 'gridTemplateRows', 'gridColumn', 'gridRow', 'gridArea', 'gridGap',
+      'width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight', 'boxSizing',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+      'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+      'backgroundColor', 'color', 'backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat',
+      'borderTopWidth', 'borderTopStyle', 'borderTopColor', 
+      'borderRightWidth', 'borderRightStyle', 'borderRightColor', 
+      'borderBottomWidth', 'borderBottomStyle', 'borderBottomColor', 
+      'borderLeftWidth', 'borderLeftStyle', 'borderLeftColor', 
+      'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius',
+      'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'textTransform', 'textDecoration', 'whiteSpace', 'textOverflow', 'wordBreak',
+      'opacity', 'transform', 'transformOrigin', 'boxShadow', 'overflow', 'visibility'
+    ];
+
+    for (const key of keys) {
+      const val = computed[key as any];
+      if (val !== undefined && val !== null && val !== '') {
+        if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
+          clone.style[key as any] = cleanCssGradientsAndColors(val);
+        } else {
+          clone.style[key as any] = val;
+        }
       }
+    }
+
+    // Preserve dynamic user-entered form inputs, textareas, and selects
+    if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
+      (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
+    } else if (original.tagName === 'SELECT') {
+      (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
     }
     
     // Recursively copy style values for all children elements in parallel
@@ -750,17 +791,17 @@ const waitForAllFontsAndImages = async (element: HTMLElement): Promise<void> => 
   try {
     const images = Array.from(element.getElementsByTagName('img'));
     const loadPromises = images.map(img => {
-      if (img.complete) return Promise.resolve();
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
       return new Promise<void>((resolve) => {
         img.onload = () => resolve();
         img.onerror = () => resolve();
-        setTimeout(() => resolve(), 3000); // 3 seconds per image timeout fallback
+        setTimeout(() => resolve(), 15000); // 15 seconds per image timeout fallback
       });
     });
-    // Overall images load wait capped to 5 seconds max
+    // Overall images load wait capped to 30 seconds max for production-grade robustness
     await Promise.race([
       Promise.all(loadPromises),
-      new Promise<void>(resolve => setTimeout(resolve, 5000))
+      new Promise<void>(resolve => setTimeout(resolve, 30000))
     ]);
   } catch (e) {
     console.warn('Failed to wait for images load:', e);
@@ -843,27 +884,16 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
         console.warn('Failed to override iframe styleSheets:', e);
       }
 
-      // 4. Copy stylesheets to iframe
+      // 4. Copy stylesheets to iframe (Only font-related link elements to avoid large local stylesheets containing oklch)
       const head = iframeDoc.head;
       
-      // Copy all style elements
-      Array.from(document.querySelectorAll('style')).forEach(style => {
-        try {
-          const styleClone = style.cloneNode(true) as HTMLStyleElement;
-          if (styleClone.textContent) {
-            styleClone.textContent = cleanCssGradientsAndColors(styleClone.textContent);
-          }
-          head.appendChild(styleClone);
-        } catch (e) {
-          // Ignore
-        }
-      });
-      
-      // Copy all link stylesheets
       Array.from(document.querySelectorAll('link[rel="stylesheet"]')).forEach(link => {
         try {
-          const linkClone = link.cloneNode(true) as HTMLLinkElement;
-          head.appendChild(linkClone);
+          const href = link.getAttribute('href') || '';
+          if (href.includes('fonts.googleapis.com') || href.includes('fonts.gstatic.com') || href.includes('font-awesome')) {
+            const linkClone = link.cloneNode(true) as HTMLLinkElement;
+            head.appendChild(linkClone);
+          }
         } catch (e) {
           // Ignore
         }
@@ -877,11 +907,14 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
         ...options,
         document: iframeDoc,
         window: iframe.contentWindow || window,
-        scale: Math.min(options.scale || 2, 2),
+        scale: options.scale || Math.max(window.devicePixelRatio || 1, 4),
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
         logging: false,
-        imageTimeout: 0,
+        foreignObjectRendering: true,
+        imageTimeout: 30000,
+        removeContainer: true,
         scrollX: 0,
         scrollY: 0,
         width: element.offsetWidth,
@@ -902,6 +935,34 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
 
       // 6. Wait for styles/images to settle, then run html2canvas inside the iframe context
       const renderTimeout = setTimeout(async () => {
+        // Temporarily monkey patch CanvasGradient.prototype.addColorStop to completely avoid non-finite gradient stop issues
+        const originalAddColorStop = (CanvasGradient.prototype as any).addColorStop;
+        (CanvasGradient.prototype as any).addColorStop = function(this: any, offset: number, color: string) {
+          if (typeof offset !== 'number' || isNaN(offset) || !isFinite(offset)) {
+            console.warn('Prevented non-finite addColorStop offset:', offset);
+            offset = 0;
+          }
+          offset = Math.max(0, Math.min(1, offset));
+          
+          let cleanedColor = color;
+          if (typeof color === 'string') {
+            try {
+              cleanedColor = cleanCssGradientsAndColors(color);
+            } catch (err) {
+              cleanedColor = color;
+            }
+          }
+          
+          try {
+            originalAddColorStop.call(this, offset, cleanedColor);
+          } catch (err) {
+            console.warn('Failed to add color stop:', offset, cleanedColor, err);
+            try {
+              originalAddColorStop.call(this, offset, '#0047AB');
+            } catch (_) {}
+          }
+        };
+
         try {
           // Wait for images inside iframe to be complete
           const images = Array.from(cloned.getElementsByTagName('img'));
@@ -918,10 +979,14 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
             canvas = await html2canvas(cloned, enhancedOptions);
           } finally {
             cleanup();
+            // Restore the original addColorStop
+            (CanvasGradient.prototype as any).addColorStop = originalAddColorStop;
           }
           resolve(canvas);
         } catch (err) {
           cleanup();
+          // Restore the original addColorStop
+          (CanvasGradient.prototype as any).addColorStop = originalAddColorStop;
           reject(err);
         }
       }, 150);
@@ -23394,46 +23459,6 @@ const IDCardsModule = ({
       badgeBg: 'bg-blue-50 border-blue-100',
       badgeText: 'text-[#0047AB]',
       cardBorder: 'border-slate-300'
-    },
-    emerald: {
-      name: 'Modern Emerald',
-      headerBg: 'bg-gradient-to-tr from-[#064e3b] via-[#059669] to-emerald-400',
-      footerBg: 'bg-[#064e3b]',
-      accentText: 'text-[#059669]',
-      accentBg: 'bg-[#059669]',
-      badgeBg: 'bg-emerald-50 border-emerald-100',
-      badgeText: 'text-[#059669]',
-      cardBorder: 'border-emerald-300'
-    },
-    crimson: {
-      name: 'Crimson Tech',
-      headerBg: 'bg-gradient-to-tr from-[#7f1d1d] via-[#dc2626] to-red-400',
-      footerBg: 'bg-[#7f1d1d]',
-      accentText: 'text-[#dc2626]',
-      accentBg: 'bg-[#dc2626]',
-      badgeBg: 'bg-red-50 border-red-100',
-      badgeText: 'text-[#dc2626]',
-      cardBorder: 'border-red-300'
-    },
-    onyx: {
-      name: 'Sleek Onyx',
-      headerBg: 'bg-gradient-to-tr from-slate-950 via-slate-800 to-slate-700',
-      footerBg: 'bg-slate-950',
-      accentText: 'text-slate-800',
-      accentBg: 'bg-slate-800',
-      badgeBg: 'bg-slate-50 border-slate-200',
-      badgeText: 'text-slate-800',
-      cardBorder: 'border-slate-400'
-    },
-    amber: {
-      name: 'Warm Amber',
-      headerBg: 'bg-gradient-to-tr from-amber-800 via-amber-600 to-amber-400',
-      footerBg: 'bg-amber-800',
-      accentText: 'text-amber-700',
-      accentBg: 'bg-amber-700',
-      badgeBg: 'bg-amber-50 border-amber-100',
-      badgeText: 'text-amber-700',
-      cardBorder: 'border-amber-300'
     }
   };
 
@@ -23473,8 +23498,24 @@ const IDCardsModule = ({
     const headerHeight = orientation === 'portrait' ? 'h-[175px]' : 'h-[145px]';
     const headerPt = orientation === 'portrait' ? 'pt-10' : 'pt-8';
 
+    const fullName = `${person.name || ''} ${person.surname || ''}`.trim();
+    let nameFontSize = 'text-[16px]';
+    if (fullName.length > 25) {
+      nameFontSize = 'text-[11px]';
+    } else if (fullName.length > 18) {
+      nameFontSize = 'text-[13px]';
+    }
+
     return (
-      <div className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl overflow-hidden flex flex-col relative font-sans border ${cardBorderClass} mx-auto rounded-2xl`}>
+      <div 
+        className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl flex flex-col relative font-sans border ${cardBorderClass} mx-auto rounded-2xl`}
+        style={{
+          textRendering: 'geometricPrecision',
+          WebkitFontSmoothing: 'antialiased',
+          MozOsxFontSmoothing: 'grayscale',
+          imageRendering: 'auto'
+        }}
+      >
         {/* Top 1/3 Colored Section - Safe padding for card cutting */}
         <div className={`${headerBgClass} ${headerHeight} flex flex-col items-center justify-start relative ${headerPt} px-4 text-center`}>
             {/* Top Border Accent */}
@@ -23483,7 +23524,7 @@ const IDCardsModule = ({
             <div className="z-10 mb-1 flex items-center justify-center gap-2 max-w-full">
                {schoolProfile?.logo && (
                  <div className="w-8 h-8 bg-white rounded-lg p-0.5 border border-white/20 shrink-0 flex items-center justify-center shadow-md">
-                   <img src={getProxyImageUrl(schoolProfile.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                   <img src={getProxyImageUrl(schoolProfile.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
                  </div>
                )}
                <div className="text-center">
@@ -23497,14 +23538,14 @@ const IDCardsModule = ({
                </div>
             </div>
 
-            {/* QR Code Centered in Upper Middle - compact for safety margin */}
-            <div className="bg-white p-1.5 rounded-xl shadow-2xl z-20 border-2 border-white transform hover:scale-105 transition-transform mt-1">
-                <QRCode value={idValue} size={orientation === 'portrait' ? 52 : 44} level="H" style={{ height: "auto", maxWidth: "100%", width: "100%" }} />
+            {/* QR Code Centered in Upper Middle - compact for safety margin and fixed sizing to prevent html2canvas shift */}
+            <div className="bg-white p-1 rounded-lg z-20 border border-slate-200/60 flex items-center justify-center shrink-0 mt-1" style={{ width: '56px', height: '56px' }}>
+                <QRCode value={idValue} size={48} level="M" style={{ width: '48px', height: '48px' }} />
             </div>
 
-            {/* Identity Card Label Pill - Adjusted position to prevent name overlapping */}
-            <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-36 h-7.5 bg-slate-900 rounded-full flex items-center justify-center p-1 border-2 border-white z-30 shadow-md">
-                <span className="text-[8.5px] font-black text-white uppercase tracking-widest">{isTeacher ? 'Staff' : 'Student'} ID CARD</span>
+            {/* Identity Card Label Pill - Adjusted position, whitespace-nowrap and padding to prevent clipping */}
+            <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white z-30 shadow-md whitespace-nowrap">
+                <span className="text-[8px] font-black text-white uppercase tracking-widest">{isTeacher ? 'Staff' : 'Student'} ID CARD</span>
             </div>
         </div>
 
@@ -23516,12 +23557,12 @@ const IDCardsModule = ({
                     <div className="w-24 h-28 border-2 border-slate-100 p-1 bg-white shadow-md rounded-xl overflow-hidden">
                         <div className="w-full h-full bg-slate-50 flex items-center justify-center overflow-hidden rounded-lg">
                             {person.photo ? (
-                                <img src={getProxyImageUrl(person.photo)} crossOrigin="anonymous" alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                <img src={getProxyImageUrl(person.photo)} crossOrigin="anonymous" alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'cover' }} />
                             ) : (
                                 <div className="flex flex-col items-center gap-1 opacity-20">
                                   <User size={32} className="text-slate-400" />
                                   <span className="text-[10px] font-black uppercase text-slate-400">Photo</span>
-                                </div>
+                                  </div>
                             )}
                         </div>
                     </div>
@@ -23574,17 +23615,17 @@ const IDCardsModule = ({
                 {/* Details Section - Clean & Structured */}
                 <div className="flex-1 min-w-0 flex flex-col justify-start">
                     <div className="mb-2">
-                      <h3 className={`font-black ${themeText} text-[15px] uppercase tracking-tighter leading-normal truncate py-1 block min-h-[24px]`}>
-                          {person.name} {person.surname || ''}
+                      <h3 className={`font-black ${themeText} ${nameFontSize} uppercase tracking-tight leading-tight py-1 block break-words overflow-wrap-anywhere whitespace-normal line-clamp-2 max-h-[40px] overflow-hidden`}>
+                          {fullName}
                       </h3>
                       <div className={`h-0.5 w-10 ${themeColor} rounded-full mt-0.5`} />
                     </div>
                     
                     <div className="space-y-1.5 flex-1 mt-1">
                         {rightDetails.map((item, idx) => (
-                            <div key={idx} className="flex flex-col text-[8.5px] leading-tight">
-                                <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px] mb-0.5">{item.label}</span>
-                                <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2.5 py-1 rounded-xl border border-[#e2e8f0] text-[9.5px] leading-normal min-h-[22px] flex items-center ${item.label === 'ADDRESS' ? 'line-clamp-2 overflow-hidden' : 'truncate'}`}>
+                            <div key={idx} className="flex flex-col text-[8.5px] leading-tight min-w-0 w-full">
+                                <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6px] mb-0.5">{item.label}</span>
+                                <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-0.5 rounded-lg border border-[#e2e8f0] text-[8.5px] leading-snug min-h-[18px] flex items-center min-w-0 w-full break-words overflow-wrap-anywhere whitespace-normal ${item.label === 'ADDRESS' ? 'line-clamp-2 h-[26px] overflow-hidden' : 'line-clamp-1 overflow-hidden'}`}>
                                   {item.value}
                                 </span>
                             </div>
@@ -23597,7 +23638,7 @@ const IDCardsModule = ({
             <div className="mt-auto pt-2 flex justify-between items-center border-t border-slate-100">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-white rounded-lg p-0.5 border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden">
-                     <img src={getProxyImageUrl(schoolProfile?.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" />
+                     <img src={getProxyImageUrl(schoolProfile?.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-[6px] font-black uppercase text-slate-400">Official</span>
@@ -23606,9 +23647,9 @@ const IDCardsModule = ({
                 </div>
                 
                 <div className="text-center">
-                     <div className="w-24 h-8 border-b border-slate-200 mx-auto mb-1 flex items-end justify-center relative">
+                     <div className="w-24 h-8 border-b border-slate-200 mx-auto mb-1 flex items-end justify-center relative" style={{ minHeight: '32px' }}>
                         {schoolProfile?.principalSignature ? (
-                          <img src={getProxyImageUrl(schoolProfile?.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply absolute bottom-0" referrerPolicy="no-referrer" />
+                          <img src={getProxyImageUrl(schoolProfile?.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply absolute bottom-0" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
                         ) : (
                           <div className="text-[6px] text-slate-200 italic mb-1 uppercase font-black">Authorized Stamp</div>
                         )}
@@ -24132,26 +24173,73 @@ const IDCardsModule = ({
       active: true,
       current: 0,
       total: 1,
-      message: `Preparing high-quality PDF for ${person.name || 'document'}...`
+      message: `Preloading fonts and assets...`
     });
 
     try {
-      const canvas = await html2canvasWithTimeout(element, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-      }, 15000);
+      // 1. Wait for all fonts to be fully loaded and preloaded
+      await preloadFonts(['Inter', 'Space Grotesk', 'JetBrains Mono', 'Playfair Display']);
 
-      const imgData = canvas.toDataURL('image/png');
+      // 2. Identify all image tags and convert them to Base64 using robust preloader with retry
+      const images = Array.from(element.getElementsByTagName('img'));
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const src = img.getAttribute('src');
+        if (src && !src.startsWith('data:')) {
+          setGenerationProgress({
+            active: true,
+            current: i,
+            total: images.length,
+            message: `Converting and loading asset ${i + 1} of ${images.length}...`
+          });
+          
+          try {
+            const base64 = await preloadImageWithRetry(src, 3, 1000);
+            if (base64) {
+              img.setAttribute('src', base64);
+              // Force local cache refresh on the image tag
+              img.src = base64;
+            }
+          } catch (imgErr) {
+            console.warn('Asset preloader failure:', src, imgErr);
+          }
+        }
+      }
+
+      setGenerationProgress({
+        active: true,
+        current: images.length,
+        total: images.length,
+        message: `Rendering high-resolution vector canvas...`
+      });
+
+      // 3. Briefly wait to allow QR Code canvas/SVG rendering and Base64 source loads to settle in the browser DOM
+      await new Promise(resolve => setTimeout(resolve, 400));
+
+      // 4. Render canvas with high-quality scale of Math.max(window.devicePixelRatio || 1, 4)
+      const scale = Math.max(window.devicePixelRatio || 1, 4);
+      const canvas = await html2canvasWithTimeout(element, {
+        scale,
+        backgroundColor: '#ffffff',
+      }, 30000);
+
+      // 5. Generate high-quality lossless PNG image
+      const imgData = canvas.toDataURL('image/png', 1.0);
       const isLandscape = canvas.width > canvas.height;
-      const pdfW = Math.round(canvas.width / 2);
-      const pdfH = Math.round(canvas.height / 2);
+      
+      // Proportional dimensions based on the high-quality canvas scale
+      const pdfW = Math.round(canvas.width / scale);
+      const pdfH = Math.round(canvas.height / scale);
       
       const pdf = new jsPDF({
         orientation: isLandscape ? 'landscape' : 'portrait',
         unit: 'px',
-        format: [pdfW, pdfH]
+        format: [pdfW, pdfH],
+        compress: false // Lossless PDF configuration
       });
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+      
+      // Render PNG onto PDF with lossless quality
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH, undefined, 'NONE');
       
       const blob = pdf.output('blob');
       const blobUrl = URL.createObjectURL(blob);
@@ -24292,39 +24380,7 @@ const IDCardsModule = ({
             </div>
           </Card>
 
-          {(activeTab === 'student' || activeTab === 'teacher') && (
-            <Card className="p-6">
-              <h3 className="font-bold text-text-heading mb-4 flex items-center gap-2">
-                <Sparkles size={18} className="text-primary" />
-                ID Card Template
-              </h3>
-              <div className="grid grid-cols-1 gap-2">
-                {Object.entries(templateStyles).map(([key, value]) => {
-                  const isSelected = idTemplate === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setIdTemplate(key)}
-                      className={`w-full text-left p-3 rounded-xl font-bold text-sm transition-all border flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-primary/10 border-primary text-primary shadow-sm'
-                          : 'bg-slate-50 border-transparent text-text-sub hover:border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex gap-0.5">
-                          <div className={`w-3 h-6 rounded-l ${key === 'classic' ? 'bg-[#003366]' : key === 'emerald' ? 'bg-[#064e3b]' : key === 'crimson' ? 'bg-[#7f1d1d]' : key === 'onyx' ? 'bg-slate-950' : 'bg-amber-800'}`} />
-                          <div className={`w-3 h-6 rounded-r ${key === 'classic' ? 'bg-[#3b82f6]' : key === 'emerald' ? 'bg-[#059669]' : key === 'crimson' ? 'bg-[#dc2626]' : key === 'onyx' ? 'bg-slate-700' : 'bg-amber-500'}`} />
-                        </div>
-                        <span>{value.name}</span>
-                      </div>
-                      {isSelected && <Check size={16} className="text-primary shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
+
 
           <Card className="p-6">
             <h3 className="font-bold text-text-heading mb-4">Select {activeTab === 'teacher' || activeTab === 'experience' ? 'Staff' : 'Student'}</h3>
