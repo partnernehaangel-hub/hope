@@ -581,13 +581,97 @@ const cleanCssGradientsAndColors = (cssText: string): string => {
   if (!cssText) return cssText;
   
   try {
-    // 1. Fast color replacement using regular expressions to convert oklch/oklab/color-mix functions to a solid fallback rgb value
-    let cleaned = cssText
-      .replace(/oklch\((?:[^()]+|\([^()]*\))*\)/gi, 'rgb(120, 120, 120)')
-      .replace(/oklab\((?:[^()]+|\([^()]*\))*\)/gi, 'rgb(120, 120, 120)')
-      .replace(/color-mix\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\)/gi, 'rgb(120, 120, 120)');
+    // Helper to convert OKLCH to RGB mathematically to support Tailwind CSS v4 colors flawlessly
+    const convertOklchToRgb = (match: string, lStr: string, cStr: string, hStr: string, aStr?: string): string => {
+      if (lStr.includes('var(') || cStr.includes('var(') || hStr.includes('var(')) {
+        return 'rgb(59, 130, 246)'; // Safe Tailwind Blue fallback for variables
+      }
+      
+      let L = parseFloat(lStr);
+      if (lStr.includes('%')) L /= 100;
+      
+      let C = parseFloat(cStr);
+      if (cStr.includes('%')) C /= 100;
+      
+      let H = parseFloat(hStr);
+      if (hStr.includes('rad')) {
+        H = parseFloat(hStr) * (180 / Math.PI);
+      } else if (hStr.includes('turn')) {
+        H = parseFloat(hStr) * 360;
+      } else if (hStr.includes('deg')) {
+        H = parseFloat(hStr);
+      }
+      
+      if (isNaN(L)) L = 0.5;
+      if (isNaN(C)) C = 0.15;
+      if (isNaN(H)) H = 220; // Default slate blue hue
+      
+      // Convert OKLCH to OKLAB
+      const hRad = (H * Math.PI) / 180;
+      const a_lab = C * Math.cos(hRad);
+      const b_lab = C * Math.sin(hRad);
+      
+      // Convert OKLAB to LMS
+      const l_prime = L + 0.3963377774 * a_lab + 0.2158037573 * b_lab;
+      const m_prime = L - 0.1055613458 * a_lab - 0.0638541747 * b_lab;
+      const s_prime = L - 0.0894841775 * a_lab - 1.2914855378 * b_lab;
+      
+      // LMS to linear LMS (cube power)
+      const l = l_prime * l_prime * l_prime;
+      const m = m_prime * m_prime * m_prime;
+      const s = s_prime * s_prime * s_prime;
+      
+      // LMS to linear sRGB
+      const rLinear = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+      const gLinear = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+      const bLinear = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
+      
+      // Linear to non-linear sRGB (gamma correction)
+      const gamma = (c: number) => {
+        if (c <= 0.0031308) {
+          return 12.92 * c;
+        } else {
+          return 1.055 * Math.pow(c, 1 / 2.4) - 0.05;
+        }
+      };
+      
+      const r = Math.max(0, Math.min(255, Math.round(gamma(rLinear) * 255)));
+      const g = Math.max(0, Math.min(255, Math.round(gamma(gLinear) * 255)));
+      const b = Math.max(0, Math.min(255, Math.round(gamma(bLinear) * 255)));
+      
+      let alpha = 1;
+      if (aStr) {
+        if (aStr.includes('var(')) {
+          alpha = 1;
+        } else {
+          alpha = parseFloat(aStr);
+          if (aStr.includes('%')) alpha /= 100;
+        }
+        if (isNaN(alpha)) alpha = 1;
+        alpha = Math.max(0, Math.min(1, alpha));
+      }
+      
+      if (aStr && alpha < 1) {
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+      return `rgb(${r}, ${g}, ${b})`;
+    };
 
-    // 2. Fast gradient replacement: if a gradient contains CSS variables or modern features, replace it with none to avoid Canvas crash
+    // Regex to capture all variations of oklch(L C H / alpha) or oklch(L C H)
+    const oklchRegex = /oklch\(([^,)/]+?)[,\s]+([^,)/]+?)[,\s]+([^,)/]+?)(?:[,\s]*\/[,\s]*([^)]+?))?\)/gi;
+    let cleaned = cssText.replace(oklchRegex, (match, l, c, h, a) => {
+      try {
+        return convertOklchToRgb(match, l, c, h, a);
+      } catch (e) {
+        return 'rgb(59, 130, 246)'; // Safe fallback
+      }
+    });
+
+    // Replace other modern CSS features to be safe with standard fallbacks
+    cleaned = cleaned.replace(/oklab\((?:[^()]+|\([^()]*\))*\)/gi, 'rgb(100, 116, 139)');
+    cleaned = cleaned.replace(/color-mix\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\)/gi, 'rgb(59, 130, 246)');
+
+    // Fast gradient replacement: if a gradient contains CSS variables or modern features, replace it with none to avoid Canvas crash
     cleaned = cleaned.replace(/(?:linear|radial|conic|repeating-linear|repeating-radial)-gradient\((?:[^()]+|\([^()]*\))*\)/gi, (match) => {
       if (match.includes('var(') || match.includes('NaN')) {
         return 'none';
@@ -599,6 +683,58 @@ const cleanCssGradientsAndColors = (cssText: string): string => {
   } catch (err) {
     console.error('Error in cleanCssGradientsAndColors:', err);
     return cssText;
+  }
+};
+
+const copyComputedStylesToClone = (original: HTMLElement, clone: HTMLElement) => {
+  try {
+    const computed = window.getComputedStyle(original);
+    
+    // Copy key visual styles
+    if (computed.backgroundColor && computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && computed.backgroundColor !== 'transparent') {
+      clone.style.backgroundColor = computed.backgroundColor;
+    }
+    if (computed.color) {
+      clone.style.color = computed.color;
+    }
+    
+    // Copy borders
+    if (computed.borderTopColor) clone.style.borderTopColor = computed.borderTopColor;
+    if (computed.borderRightColor) clone.style.borderRightColor = computed.borderRightColor;
+    if (computed.borderBottomColor) clone.style.borderBottomColor = computed.borderBottomColor;
+    if (computed.borderLeftColor) clone.style.borderLeftColor = computed.borderLeftColor;
+    
+    if (computed.borderTopWidth) clone.style.borderTopWidth = computed.borderTopWidth;
+    if (computed.borderRightWidth) clone.style.borderRightWidth = computed.borderRightWidth;
+    if (computed.borderBottomWidth) clone.style.borderBottomWidth = computed.borderBottomWidth;
+    if (computed.borderLeftWidth) clone.style.borderLeftWidth = computed.borderLeftWidth;
+    
+    if (computed.borderTopStyle) clone.style.borderTopStyle = computed.borderTopStyle;
+    if (computed.borderRightStyle) clone.style.borderRightStyle = computed.borderRightStyle;
+    if (computed.borderBottomStyle) clone.style.borderBottomStyle = computed.borderBottomStyle;
+    if (computed.borderLeftStyle) clone.style.borderLeftStyle = computed.borderLeftStyle;
+    
+    if (computed.borderRadius) clone.style.borderRadius = computed.borderRadius;
+    
+    // Gradients & background images
+    const bgImage = computed.backgroundImage;
+    if (bgImage && bgImage !== 'none') {
+      if (bgImage.includes('oklch')) {
+        clone.style.backgroundImage = cleanCssGradientsAndColors(bgImage);
+      } else {
+        clone.style.backgroundImage = bgImage;
+      }
+    }
+    
+    // Recursively copy style values for all children elements in parallel
+    const originalChildren = Array.from(original.children) as HTMLElement[];
+    const cloneChildren = Array.from(clone.children) as HTMLElement[];
+    
+    for (let i = 0; i < originalChildren.length && i < cloneChildren.length; i++) {
+      copyComputedStylesToClone(originalChildren[i], cloneChildren[i]);
+    }
+  } catch (e) {
+    console.error('Error in copyComputedStylesToClone:', e);
   }
 };
 
@@ -643,101 +779,165 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
   }
 
   const finalTimeoutMs = Math.max(timeoutMs, 15000);
-  const originalOnClone = options.onclone;
-  const enhancedOptions = {
-    ...options,
-    scale: Math.min(options.scale || 2, 2), // Bounded to 2 for optimal crispness without memory/size limits on mobile Chrome
-    useCORS: true,
-    allowTaint: true,
-    logging: false,
-    imageTimeout: 0, // Inlined images run instantly, so we don't need additional imageTimeout
-    scrollX: 0,
-    scrollY: 0,
-    windowWidth: document.documentElement.offsetWidth,
-    windowHeight: document.documentElement.offsetHeight,
-    onclone: (clonedDoc: Document, clonedElement: HTMLElement) => {
-      // 1. Clean up stylesheets in the cloned document
-      try {
-        const styleElements = clonedDoc.getElementsByTagName('style');
-        for (let i = 0; i < styleElements.length; i++) {
-          const style = styleElements[i];
-          if (style.textContent) {
-            style.textContent = cleanCssGradientsAndColors(style.textContent);
-          }
-        }
-      } catch (e) {
-        console.error('Failed to clean stylesheets in clone:', e);
-      }
 
-      // 2. Clean up inline styles and remove unsupported CSS effects on ALL elements in clone
-      try {
-        const allElements = clonedDoc.getElementsByTagName('*');
-        for (let i = 0; i < allElements.length; i++) {
-          const el = allElements[i] as HTMLElement;
-          
-          // Remove unsupported filters
-          if (el.style.filter) el.style.filter = 'none';
-          if (el.style.backdropFilter) el.style.backdropFilter = 'none';
-          
-          // Remove animations and transitions
-          if (el.style.animation) el.style.animation = 'none';
-          if (el.style.transition) el.style.transition = 'none';
-          
-          // Remove transform issues that break positioning
-          if (el.style.transform && el.style.transform !== 'none') {
-            if (el.style.transform.includes('scale') || el.style.transform.includes('translate3d')) {
-              el.style.transform = 'none';
-            }
-          }
-          
-          let styleAttr = el.getAttribute('style');
-          if (styleAttr) {
-            styleAttr = cleanCssGradientsAndColors(styleAttr);
-            
-            if (styleAttr.includes('filter') || styleAttr.includes('backdrop-filter')) {
-              styleAttr = styleAttr.replace(/filter\s*:[^;]+;/gi, 'filter: none;');
-              styleAttr = styleAttr.replace(/backdrop-filter\s*:[^;]+;/gi, 'backdrop-filter: none;');
-            }
-            if (styleAttr.includes('transition') || styleAttr.includes('animation')) {
-              styleAttr = styleAttr.replace(/transition\s*:[^;]+;/gi, 'transition: none;');
-              styleAttr = styleAttr.replace(/animation\s*:[^;]+;/gi, 'animation: none;');
-            }
-            el.setAttribute('style', styleAttr);
-          }
-          
-          // Convert complex CSS gradient classes (such as Tailwind variables) to simple solid background
-          const classList = el.classList;
-          const hasGradient = Array.from(classList).some(c => c.includes('gradient') || c.startsWith('bg-linear') || c.includes('from-') || c.includes('to-'));
-          const styleBg = el.style.backgroundImage || '';
-          
-          if (hasGradient || styleBg.includes('gradient')) {
-            const solidColor = resolveSolidColorFromClasses(classList) || '#0047AB';
-            el.style.backgroundImage = 'none';
-            el.style.background = solidColor;
-            el.style.backgroundColor = solidColor;
-          }
-        }
-      } catch (e) {
-        console.error('Failed to clean elements in clone:', e);
-      }
-
-      // Call original onclone callback if defined
-      if (originalOnClone) {
+  return new Promise((resolve, reject) => {
+    let iframe: HTMLIFrameElement | null = null;
+    
+    // Define a robust cleanup function to safely remove the iframe
+    const cleanup = () => {
+      if (iframe && iframe.parentNode) {
         try {
-          originalOnClone(clonedDoc, clonedElement);
-        } catch (e) {
-          console.error('Error in original onclone:', e);
-        }
+          document.body.removeChild(iframe);
+        } catch (e) {}
       }
-    }
-  };
+    };
 
-  return Promise.race([
-    html2canvas(element, enhancedOptions),
-    new Promise<HTMLCanvasElement>((_, reject) => 
-      setTimeout(() => reject(new Error('html2canvas timed out')), finalTimeoutMs)
-    )
-  ]);
+    try {
+      // 1. Create a hidden iframe
+      iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = element.offsetWidth + 'px';
+      iframe.style.height = element.offsetHeight + 'px';
+      iframe.style.border = '0';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      iframe.style.zIndex = '-9999';
+      
+      document.body.appendChild(iframe);
+      
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        cleanup();
+        throw new Error('Could not access iframe document');
+      }
+      
+      // 2. Clone the element and clean up its styles
+      const cloned = element.cloneNode(true) as HTMLElement;
+      cloned.style.display = 'block';
+      cloned.style.visibility = 'visible';
+      cloned.style.opacity = '1';
+      cloned.style.transform = 'none';
+      cloned.style.margin = '0';
+      
+      // Copy computed styles from original element to clone to preserve all resolved oklch colors & custom styling
+      copyComputedStylesToClone(element, cloned);
+      
+      // 3. Write basic HTML structure to iframe with base URL to resolve relative images/stylesheets
+      iframeDoc.open();
+      iframeDoc.write(`<!DOCTYPE html><html><head><base href="${window.location.origin}/"><title>Print Isolation</title></head><body></body></html>`);
+      iframeDoc.close();
+      
+      // Override styleSheets property on the iframe's document object.
+      // This prevents html2canvas from scanning and parsing the stylesheets (which contain modern, unsupported oklch color values and other custom syntax that crashes the html2canvas parser).
+      // Since we recursively inlined computed styles and browser resolves oklch to standard rgb, html2canvas renders perfectly and is much faster.
+      try {
+        Object.defineProperty(iframeDoc, 'styleSheets', {
+          get() {
+            return [];
+          },
+          configurable: true
+        });
+      } catch (e) {
+        console.warn('Failed to override iframe styleSheets:', e);
+      }
+
+      // 4. Copy stylesheets to iframe
+      const head = iframeDoc.head;
+      
+      // Copy all style elements
+      Array.from(document.querySelectorAll('style')).forEach(style => {
+        try {
+          const styleClone = style.cloneNode(true) as HTMLStyleElement;
+          if (styleClone.textContent) {
+            styleClone.textContent = cleanCssGradientsAndColors(styleClone.textContent);
+          }
+          head.appendChild(styleClone);
+        } catch (e) {
+          // Ignore
+        }
+      });
+      
+      // Copy all link stylesheets
+      Array.from(document.querySelectorAll('link[rel="stylesheet"]')).forEach(link => {
+        try {
+          const linkClone = link.cloneNode(true) as HTMLLinkElement;
+          head.appendChild(linkClone);
+        } catch (e) {
+          // Ignore
+        }
+      });
+      
+      // 5. Append cloned element to iframe body
+      iframeDoc.body.appendChild(cloned);
+      
+      const originalOnClone = options.onclone;
+      const enhancedOptions = {
+        ...options,
+        document: iframeDoc,
+        window: iframe.contentWindow || window,
+        scale: Math.min(options.scale || 2, 2),
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        imageTimeout: 0,
+        scrollX: 0,
+        scrollY: 0,
+        width: element.offsetWidth,
+        height: element.offsetHeight,
+        windowWidth: element.offsetWidth,
+        windowHeight: element.offsetHeight,
+        onclone: (clonedDoc: Document, clonedEl: HTMLElement) => {
+          // Call original onclone if any
+          if (originalOnClone) {
+            try {
+              originalOnClone(clonedDoc, clonedEl);
+            } catch (e) {
+              console.error('Error in original onclone:', e);
+            }
+          }
+        }
+      };
+
+      // 6. Wait for styles/images to settle, then run html2canvas inside the iframe context
+      const renderTimeout = setTimeout(async () => {
+        try {
+          // Wait for images inside iframe to be complete
+          const images = Array.from(cloned.getElementsByTagName('img'));
+          await Promise.all(images.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise<void>(res => {
+              img.onload = () => res();
+              img.onerror = () => res();
+            });
+          }));
+
+          let canvas;
+          try {
+            canvas = await html2canvas(cloned, enhancedOptions);
+          } finally {
+            cleanup();
+          }
+          resolve(canvas);
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      }, 150);
+
+      // Overall safety timeout
+      setTimeout(() => {
+        clearTimeout(renderTimeout);
+        cleanup();
+        reject(new Error('html2canvas timed out'));
+      }, finalTimeoutMs);
+
+    } catch (err) {
+      cleanup();
+      reject(err);
+    }
+  });
 };
 
 const extractIdFromQR = (text: string, paramName: string = 'id') => {
@@ -23280,17 +23480,21 @@ const IDCardsModule = ({
             {/* Top Border Accent */}
             <div className="absolute top-0 left-0 w-full h-1 bg-black/10" />
             
-            <div className="z-10 mb-1">
-               <h2 className="text-white font-black text-[11px] uppercase tracking-[0.2rem] leading-tight drop-shadow-md">{schoolName}</h2>
-               <p className="text-[7.5px] text-white/90 font-bold uppercase tracking-wider mt-0.5 leading-tight">{schoolProfile?.address?.substring(0, 80)}</p>
-               {schoolContact && (
-                 <div className="mt-1 flex flex-col items-center">
-                    <div className="h-px w-20 bg-white/20 mb-0.5" />
-                    <p className="text-[6.5px] text-white font-black uppercase tracking-[0.15em] bg-black/20 px-2 py-0.5 rounded-full inline-block">
-                      PH: {schoolContact}
-                    </p>
+            <div className="z-10 mb-1 flex items-center justify-center gap-2 max-w-full">
+               {schoolProfile?.logo && (
+                 <div className="w-8 h-8 bg-white rounded-lg p-0.5 border border-white/20 shrink-0 flex items-center justify-center shadow-md">
+                   <img src={getProxyImageUrl(schoolProfile.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                  </div>
                )}
+               <div className="text-center">
+                  <h2 className="text-white font-black text-[10px] uppercase tracking-wider leading-tight drop-shadow-md">{schoolName}</h2>
+                  <p className="text-[6.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[210px]">{schoolProfile?.address?.substring(0, 80)}</p>
+                  {schoolContact && (
+                     <p className="text-[6px] text-white font-black uppercase tracking-[0.1em] bg-black/20 px-1.5 py-0.5 rounded-full inline-block mt-0.5 leading-none">
+                       PH: {schoolContact}
+                     </p>
+                  )}
+               </div>
             </div>
 
             {/* QR Code Centered in Upper Middle - compact for safety margin */}
@@ -23298,14 +23502,14 @@ const IDCardsModule = ({
                 <QRCode value={idValue} size={orientation === 'portrait' ? 52 : 44} level="H" style={{ height: "auto", maxWidth: "100%", width: "100%" }} />
             </div>
 
-            {/* Identity Card Label Pill - Adjusted position */}
-            <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-40 h-9 bg-slate-900 rounded-full flex items-center justify-center p-1 border-4 border-white z-30 shadow-lg">
-                <span className="text-[9px] font-black text-white uppercase tracking-widest">{isTeacher ? 'Staff' : 'Student'} ID CARD</span>
+            {/* Identity Card Label Pill - Adjusted position to prevent name overlapping */}
+            <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-36 h-7.5 bg-slate-900 rounded-full flex items-center justify-center p-1 border-2 border-white z-30 shadow-md">
+                <span className="text-[8.5px] font-black text-white uppercase tracking-widest">{isTeacher ? 'Staff' : 'Student'} ID CARD</span>
             </div>
         </div>
 
-        {/* Main Body - Redesigned for "Neatness" & Complete Visibility */}
-        <div className="flex-1 bg-white p-4 pt-8 flex flex-col min-w-0">
+        {/* Main Body - Redesigned for "Neatness" & Complete Visibility without any overlap */}
+        <div className="flex-1 bg-white p-4 pt-11 flex flex-col min-w-0">
             <div className="flex gap-4 items-stretch mb-2">
                 {/* Photo Section & Quick Identifiers */}
                 <div className="shrink-0 flex flex-col items-center gap-1.5 w-24">
@@ -23370,10 +23574,10 @@ const IDCardsModule = ({
                 {/* Details Section - Clean & Structured */}
                 <div className="flex-1 min-w-0 flex flex-col justify-start">
                     <div className="mb-2">
-                      <h3 className={`font-black ${themeText} text-[15px] uppercase tracking-tighter leading-tight truncate`}>
+                      <h3 className={`font-black ${themeText} text-[15px] uppercase tracking-tighter leading-normal truncate py-1 block min-h-[24px]`}>
                           {person.name} {person.surname || ''}
                       </h3>
-                      <div className={`h-0.5 w-10 ${themeColor} rounded-full mt-1`} />
+                      <div className={`h-0.5 w-10 ${themeColor} rounded-full mt-0.5`} />
                     </div>
                     
                     <div className="space-y-1.5 flex-1 mt-1">
@@ -23392,12 +23596,12 @@ const IDCardsModule = ({
             {/* Principal Signature & Branding */}
             <div className="mt-auto pt-2 flex justify-between items-center border-t border-slate-100">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-slate-50 rounded-lg p-1.5 border border-slate-100">
-                     <img src={getProxyImageUrl(schoolProfile?.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain grayscale opacity-50" />
+                  <div className="w-8 h-8 bg-white rounded-lg p-0.5 border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden">
+                     <img src={getProxyImageUrl(schoolProfile?.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-[6px] font-black uppercase text-slate-300">Official</span>
-                    <span className="text-[7px] font-black uppercase text-slate-400 tracking-tighter">Credential</span>
+                    <span className="text-[6px] font-black uppercase text-slate-400">Official</span>
+                    <span className="text-[7px] font-black uppercase text-slate-600 tracking-tighter">Credential</span>
                   </div>
                 </div>
                 
@@ -23901,7 +24105,6 @@ const IDCardsModule = ({
     </div>
   );
 
-  const [bulkMode, setBulkMode] = useState(false);
   const [idTemplate, setIdTemplate] = useState<string>('classic');
   const [printPeople, setPrintPeople] = useState<any[] | null>(null);
 
@@ -23914,132 +24117,54 @@ const IDCardsModule = ({
     }, 200);
   };
 
-  const handlePrintAll = () => {
-    if (filteredPeople.length === 0) {
-      alert('No data available to print.');
-      return;
-    }
-    setPrintPeople(filteredPeople);
-    setTimeout(() => {
-      window.print();
-      setPrintPeople(null);
-    }, 400);
-  };
-
   const [generationProgress, setGenerationProgress] = useState<{ active: boolean; current: number; total: number; message: string } | null>(null);
 
   const handleDownloadPDF = async (person: any) => {
     if (!person) return;
-    // Natively trigger print-to-PDF which is instant, has perfect vector quality, and doesn't freeze the browser
-    handlePrintSingle(person);
-  };
-
-  const handleBulkDownloadSinglePDF = async () => {
-    if (filteredPeople.length === 0) {
-      alert('No data available to download.');
+    const cardId = `card-${person.id || person.studentId}`;
+    const element = document.getElementById(cardId);
+    if (!element) {
+      alert('Card element not found on screen. Please make sure the card is visible.');
       return;
     }
-    // Natively trigger combined printing of all cards which supports "Save as PDF" flawlessly with zero delay or canvas-rendering crash risks
-    handlePrintAll();
-  };
-
-  const handleBulkDownloadZIP = async (format: 'pdf' | 'png') => {
-    if (filteredPeople.length === 0) {
-      alert('No data available to download.');
-      return;
-    }
-
-    const confirmDownload = confirm(`Generate and package ${filteredPeople.length} individual cards in a ZIP archive?`);
-    if (!confirmDownload) return;
 
     setGenerationProgress({
       active: true,
       current: 0,
-      total: filteredPeople.length,
-      message: `Initializing ZIP package for ${filteredPeople.length} ${format.toUpperCase()} files...`
+      total: 1,
+      message: `Preparing high-quality PDF for ${person.name || 'document'}...`
     });
 
     try {
-      // Pre-convert CSS style sheets to prevent html2canvas oklch parsing crashes
-      await convertAllPageStyles();
-      const zip = new JSZip();
-      let addedCount = 0;
+      const canvas = await html2canvasWithTimeout(element, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+      }, 15000);
 
-      for (let i = 0; i < filteredPeople.length; i++) {
-        const person = filteredPeople[i];
-        const cardId = `card-${person.id || person.studentId}`;
-        const element = document.getElementById(cardId);
-        
-        if (!element) {
-          console.warn(`Card element not found for ZIP: ${person.name}`);
-          continue;
-        }
-
-        setGenerationProgress({
-          active: true,
-          current: i + 1,
-          total: filteredPeople.length,
-          message: `Packaging card ${i + 1} of ${filteredPeople.length} (${person.name})...`
-        });
-
-        try {
-          const canvas = await html2canvasWithTimeout(element, {
-            scale: 1.5,
-            backgroundColor: '#ffffff',
-          }, 6000);
-
-          const imgData = canvas.toDataURL('image/png');
-
-          if (format === 'png') {
-            const rawPng = imgData.split(',')[1];
-            const fileName = `${person.name}_${person.studentId || person.id || 'id'}.png`;
-            zip.file(fileName, rawPng, { base64: true });
-            addedCount++;
-          } else {
-            const isLandscape = canvas.width > canvas.height;
-            const pageW = Math.round(canvas.width / 2);
-            const pageH = Math.round(canvas.height / 2);
-
-            const pdf = new jsPDF({
-              orientation: isLandscape ? 'landscape' : 'portrait',
-              unit: 'px',
-              format: [pageW, pageH]
-            });
-            pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
-            
-            const pdfBlob = pdf.output('blob');
-            const fileName = `${person.name}_${person.studentId || person.id || 'id'}.pdf`;
-            zip.file(fileName, pdfBlob);
-            addedCount++;
-          }
-        } catch (err) {
-          console.error(`Skipped ZIP entry for ${person.name}:`, err);
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 20));
-      }
-
-      if (addedCount > 0) {
-        setGenerationProgress({
-          active: true,
-          current: filteredPeople.length,
-          total: filteredPeople.length,
-          message: 'Compressing and downloading ZIP archive...'
-        });
-
-        const zipContent = await zip.generateAsync({ type: 'blob' });
-        const downloadLink = document.createElement('a');
-        downloadLink.href = URL.createObjectURL(zipContent);
-        downloadLink.download = `Bulk_${activeTab}_Cards_${format.toUpperCase()}.zip`;
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-      } else {
-        alert('Could not package any cards.');
-      }
-    } catch (err: any) {
-      console.error('Error during bulk ZIP generation:', err);
-      alert(`An error occurred during ZIP generation: ${err.message || err}`);
+      const imgData = canvas.toDataURL('image/png');
+      const isLandscape = canvas.width > canvas.height;
+      const pdfW = Math.round(canvas.width / 2);
+      const pdfH = Math.round(canvas.height / 2);
+      
+      const pdf = new jsPDF({
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [pdfW, pdfH]
+      });
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+      
+      const blob = pdf.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = blobUrl;
+      downloadLink.download = `${activeTab}-${person.name || 'document'}-${person.studentId || person.id || 'id'}.pdf`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      URL.revokeObjectURL(blobUrl);
+    } catch (error: any) {
+      console.error('Error generating PDF:', error);
+      alert(`Could not download PDF: ${error.message || error}. Try printing and choosing "Save as PDF" which always works perfectly!`);
     } finally {
       setGenerationProgress(null);
     }
@@ -24116,7 +24241,6 @@ const IDCardsModule = ({
             onClick={() => {
               setActiveTab(tab.id);
               setSelectedPerson(null);
-              setBulkMode(false);
             }}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all ${
               activeTab === tab.id 
@@ -24164,22 +24288,6 @@ const IDCardsModule = ({
                     </select>
                   </div>
                 </>
-              )}
-              {filteredPeople.length > 0 && (
-                <button 
-                  onClick={() => {
-                    setBulkMode(!bulkMode);
-                    setSelectedPerson(null);
-                  }}
-                  className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
-                    bulkMode 
-                      ? 'bg-primary text-white shadow-lg' 
-                      : 'bg-white border border-slate-200 text-text-heading hover:bg-slate-50'
-                  }`}
-                >
-                  <FileOutput size={18} />
-                  {bulkMode ? 'Exit Bulk Mode' : 'Bulk Download / Print'}
-                </button>
               )}
             </div>
           </Card>
@@ -24243,149 +24351,61 @@ const IDCardsModule = ({
 
         {/* Preview Area */}
         <div className="lg:col-span-3">
-          {bulkMode ? (
-            <div className="space-y-8">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-0 z-20 no-print">
+          <Card className="p-12 min-h-[600px] flex flex-col items-center justify-center bg-slate-50/50 border-dashed border-2 border-slate-200 relative">
+            {selectedPerson ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex flex-col items-center gap-8"
+              >
+                <div className="bg-white p-4 rounded-[32px] shadow-2xl" id={`card-${selectedPerson.id || selectedPerson.studentId}`}>
+                  {activeTab === 'student' && <IDCard person={selectedPerson} orientation={orientation} template={idTemplate} />}
+                  {activeTab === 'teacher' && <IDCard person={selectedPerson} type="teacher" orientation={orientation} template={idTemplate} />}
+                  {activeTab === 'hostel' && <HostelCard student={selectedPerson} />}
+                  {activeTab === 'transfer' && <TransferCertificate student={selectedPerson} />}
+                  {activeTab === 'migration' && <MigrationCertificate student={selectedPerson} />}
+                  {activeTab === 'awards' && <AwardCertificate student={selectedPerson} />}
+                  {activeTab === 'experience' && <ExperienceCertificate staff={selectedPerson} />}
+                  {activeTab === 'appraisal' && <AppraisalCertificate person={selectedPerson} />}
+                  {activeTab === 'marksheet' && (
+                    <MarkSheet 
+                      student={selectedPerson} 
+                      results={examResults.filter((r: any) => r.studentId === selectedPerson.studentId)} 
+                    />
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-4 justify-center no-print">
+                  <button 
+                    onClick={() => handlePrintSingle(selectedPerson)}
+                    className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-primary/20 hover:scale-105 transition-all cursor-pointer"
+                    title="Print this card natively with perfect vector layout"
+                  >
+                    <Printer size={20} />
+                    Print Card
+                  </button>
+                  <button 
+                    onClick={() => handleDownloadPDF(selectedPerson)}
+                    className="flex items-center gap-2 bg-white border border-slate-200 px-8 py-4 rounded-2xl font-black hover:bg-slate-50 shadow-md hover:scale-105 transition-all cursor-pointer text-slate-700"
+                    title="Download PDF for this card"
+                  >
+                    <Download size={20} />
+                    Download PDF
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="text-center space-y-4 no-print">
+                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                  <UserCircle size={40} />
+                </div>
                 <div>
-                  <h3 className="font-black text-text-heading">Bulk Generation Mode</h3>
-                  <p className="text-xs text-text-sub font-bold text-text-sub">Generating {filteredPeople.length} {activeTab}s{selectedClass ? ` for Class ${selectedClass}` : ' for All Classes'}</p>
-                </div>
-                <div className="flex items-center gap-3 no-print flex-wrap">
-                  <button 
-                    onClick={handlePrintAll} 
-                    className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
-                    title="Print all cards natively with perfect quality and vector layouts"
-                  >
-                    <Printer size={16} />
-                    Print All Cards
-                  </button>
-                  <button 
-                    onClick={handleBulkDownloadSinglePDF} 
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-black shadow-lg shadow-emerald-600/20 hover:scale-105 active:scale-95 transition-all text-xs cursor-pointer"
-                    title="Download a single combined PDF with all cards on separate pages natively"
-                  >
-                    <FileDown size={16} />
-                    Combined PDF
-                  </button>
+                  <h4 className="text-xl font-bold text-text-heading">No Selection</h4>
+                  <p className="text-text-sub max-w-xs mx-auto">Please select a {activeTab === 'teacher' || activeTab === 'experience' ? 'staff member' : 'student'} from the sidebar to preview their {tabs.find(t => t.id === activeTab)?.label}.</p>
                 </div>
               </div>
-              <div className="space-y-12">
-                {filteredPeople.map((p: any) => (
-                  <div key={p.id} className="flex flex-col items-center">
-                    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-xl flex flex-col items-center">
-                      {activeTab === 'student' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} orientation={orientation} template={idTemplate} /></div>}
-                      {activeTab === 'teacher' && <div id={`card-${p.id || p.studentId}`}><IDCard person={p} type="teacher" orientation={orientation} template={idTemplate} /></div>}
-                      {activeTab === 'hostel' && <div id={`card-${p.id || p.studentId}`}><HostelCard student={p} /></div>}
-                      {activeTab === 'transfer' && <div id={`card-${p.id || p.studentId}`}><TransferCertificate student={p} /></div>}
-                      {activeTab === 'migration' && <div id={`card-${p.id || p.studentId}`}><MigrationCertificate student={p} /></div>}
-                      {activeTab === 'awards' && <div id={`card-${p.id || p.studentId}`}><AwardCertificate student={p} /></div>}
-                      {activeTab === 'appraisal' && <div id={`card-${p.id || p.studentId}`}><AppraisalCertificate person={p} /></div>}
-                      {activeTab === 'marksheet' && (
-                        <div id={`card-${p.id || p.studentId}`}>
-                          <MarkSheet 
-                            student={p} 
-                            results={examResults.filter((r: any) => r.studentId === p.studentId)} 
-                          />
-                        </div>
-                      )}
-
-                      {/* Direct Single Card Action */}
-                      <div className="mt-6 flex items-center justify-center gap-3 no-print">
-                        <button
-                          onClick={() => handlePrintSingle(p)}
-                          className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-xl text-xs font-black transition-all shadow-md hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
-                          title="Print this card natively"
-                        >
-                          <Printer size={14} />
-                          Print Card
-                        </button>
-                        <button
-                          onClick={() => handleDownloadPDF(p)}
-                          className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm hover:scale-[1.03] active:scale-[0.97] cursor-pointer"
-                          title="Download PDF for this single card"
-                        >
-                          <Download size={14} />
-                          Download PDF
-                        </button>
-                      </div>
-                    </div>
-                    <div className="w-full border-b-2 border-dashed border-slate-300 my-8 no-print"></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <Card className="p-12 min-h-[600px] flex flex-col items-center justify-center bg-slate-50/50 border-dashed border-2 border-slate-200 relative">
-              {filteredPeople.length > 0 && (
-                <div className="absolute top-4 right-4 no-print">
-                  <button
-                    onClick={() => {
-                      setBulkMode(true);
-                      setSelectedPerson(null);
-                    }}
-                    className="flex items-center gap-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white px-4 py-2.5 rounded-xl text-xs font-black shadow-lg shadow-rose-500/20 hover:shadow-xl transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                    title="Switch to bulk download and printing mode"
-                  >
-                    <FolderDown size={14} />
-                    Bulk Download All ({filteredPeople.length})
-                  </button>
-                </div>
-              )}
-              {selectedPerson ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex flex-col items-center gap-8"
-                >
-                  <div className="bg-white p-4 rounded-[32px] shadow-2xl" id={`card-${selectedPerson.id || selectedPerson.studentId}`}>
-                    {activeTab === 'student' && <IDCard person={selectedPerson} orientation={orientation} template={idTemplate} />}
-                    {activeTab === 'teacher' && <IDCard person={selectedPerson} type="teacher" orientation={orientation} template={idTemplate} />}
-                    {activeTab === 'hostel' && <HostelCard student={selectedPerson} />}
-                    {activeTab === 'transfer' && <TransferCertificate student={selectedPerson} />}
-                    {activeTab === 'migration' && <MigrationCertificate student={selectedPerson} />}
-                    {activeTab === 'awards' && <AwardCertificate student={selectedPerson} />}
-                    {activeTab === 'experience' && <ExperienceCertificate staff={selectedPerson} />}
-                    {activeTab === 'appraisal' && <AppraisalCertificate person={selectedPerson} />}
-                    {activeTab === 'marksheet' && (
-                      <MarkSheet 
-                        student={selectedPerson} 
-                        results={examResults.filter((r: any) => r.studentId === selectedPerson.studentId)} 
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-4 justify-center no-print">
-                    <button 
-                      onClick={() => handlePrintSingle(selectedPerson)}
-                      className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-2xl font-black shadow-xl shadow-primary/20 hover:scale-105 transition-all cursor-pointer"
-                      title="Print this card natively with perfect vector layout"
-                    >
-                      <Printer size={20} />
-                      Print Card
-                    </button>
-                    <button 
-                      onClick={() => handleDownloadPDF(selectedPerson)}
-                      className="flex items-center gap-2 bg-white border border-slate-200 px-8 py-4 rounded-2xl font-black hover:bg-slate-50 shadow-md hover:scale-105 transition-all cursor-pointer text-slate-700"
-                      title="Download PDF for this card"
-                    >
-                      <Download size={20} />
-                      Download PDF
-                    </button>
-                  </div>
-                </motion.div>
-              ) : (
-                <div className="text-center space-y-4 no-print">
-                  <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
-                    <UserCircle size={40} />
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-bold text-text-heading">No Selection</h4>
-                    <p className="text-text-sub max-w-xs mx-auto">Please select a {activeTab === 'teacher' || activeTab === 'experience' ? 'staff member' : 'student'} from the sidebar to preview their {tabs.find(t => t.id === activeTab)?.label}.</p>
-                  </div>
-                </div>
-              )}
-            </Card>
-          )}
+            )}
+          </Card>
         </div>
       </div>
 
@@ -24397,10 +24417,13 @@ const IDCardsModule = ({
               #root > *:not(.print-only-container) {
                 display: none !important;
               }
-              body {
+              html, body {
                 background-color: white !important;
                 margin: 0 !important;
                 padding: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
               }
               .print-only-container {
                 display: block !important;
@@ -24409,6 +24432,14 @@ const IDCardsModule = ({
                 top: 0 !important;
                 width: 100% !important;
                 background: white !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
+              }
+              .print-only-container * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                color-adjust: exact !important;
               }
               .print-page-break {
                 page-break-after: always !important;
