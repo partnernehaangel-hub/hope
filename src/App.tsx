@@ -8949,7 +8949,7 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
             imageTimeout: 3000
           }, 6000);
           // Verify exportability
-          canvas.toDataURL('image/png');
+          canvas.toDataURL('image/jpeg', 0.95);
         } catch (corsError) {
           console.warn('CORS html2canvas failed for receipt PDF download, retrying without external images...', corsError);
           canvas = await html2canvasWithTimeout(receiptRef.current, {
@@ -8959,7 +8959,7 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
             imageTimeout: 3000
           }, 6000);
         }
-        const imgData = canvas.toDataURL('image/png');
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
         
         // Determine PDF format based on print size
         const pdfFormat = printSize === '58mm' ? [164, (canvas.height * 164) / canvas.width] : 'a4';
@@ -8972,7 +8972,7 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
         
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
         
         // Standalone standard secure download logic compatible with iframe/sandboxing
         const blob = pdf.output('blob');
@@ -23462,7 +23462,7 @@ const IDCardsModule = ({
     }
   };
 
-  const IDCard = ({ person, type = 'student', orientation = 'portrait', template = 'classic' }: { person: any, type?: string, orientation?: 'portrait' | 'landscape', template?: string }) => {
+  const IDCard = ({ person, type = 'student', orientation = 'portrait', template = 'classic', id }: { person: any, type?: string, orientation?: 'portrait' | 'landscape', template?: string, id?: string }) => {
     const isTeacher = type === 'teacher';
     const currentStyle = templateStyles[template] || templateStyles.classic;
     
@@ -23508,7 +23508,8 @@ const IDCardsModule = ({
 
     return (
       <div 
-        className={`${orientation === 'portrait' ? 'w-[325px] h-[470px]' : 'w-[470px] h-[325px]'} bg-white shadow-2xl flex flex-col relative font-sans border ${cardBorderClass} mx-auto rounded-2xl`}
+        id={id}
+        className={`${orientation === 'portrait' ? 'w-[325px] h-[512px]' : 'w-[512px] h-[325px]'} bg-white shadow-2xl flex flex-col relative font-sans border ${cardBorderClass} mx-auto rounded-2xl overflow-hidden`}
         style={{
           textRendering: 'geometricPrecision',
           WebkitFontSmoothing: 'antialiased',
@@ -23517,7 +23518,7 @@ const IDCardsModule = ({
         }}
       >
         {/* Top 1/3 Colored Section - Safe padding for card cutting */}
-        <div className={`${headerBgClass} ${headerHeight} flex flex-col items-center justify-start relative ${headerPt} px-4 text-center`}>
+        <div className={`${headerBgClass} ${headerHeight} flex flex-col items-center justify-start relative ${headerPt} pl-6 pr-4 text-center`}>
             {/* Top Border Accent */}
             <div className="absolute top-0 left-0 w-full h-1 bg-black/10" />
             
@@ -23528,7 +23529,7 @@ const IDCardsModule = ({
                  </div>
                )}
                <div className="text-center">
-                  <h2 className="text-white font-black text-[10px] uppercase tracking-wider leading-tight drop-shadow-md">{schoolName}</h2>
+                  <h2 className="text-amber-300 font-extrabold text-[12.5px] uppercase tracking-wider leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">{schoolName}</h2>
                   <p className="text-[6.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[210px]">{schoolProfile?.address?.substring(0, 80)}</p>
                   {schoolContact && (
                      <p className="text-[6px] text-white font-black uppercase tracking-[0.1em] bg-black/20 px-1.5 py-0.5 rounded-full inline-block mt-0.5 leading-none">
@@ -23550,7 +23551,7 @@ const IDCardsModule = ({
         </div>
 
         {/* Main Body - Redesigned for "Neatness" & Complete Visibility without any overlap */}
-        <div className="flex-1 bg-white p-4 pt-11 flex flex-col min-w-0">
+        <div className="flex-1 bg-white pl-6 pr-4 pb-4 pt-11 flex flex-col min-w-0">
             <div className="flex gap-4 items-stretch mb-2">
                 {/* Photo Section & Quick Identifiers */}
                 <div className="shrink-0 flex flex-col items-center gap-1.5 w-24">
@@ -24223,23 +24224,23 @@ const IDCardsModule = ({
         backgroundColor: '#ffffff',
       }, 30000);
 
-      // 5. Generate high-quality lossless PNG image
-      const imgData = canvas.toDataURL('image/png', 1.0);
+      // 5. Generate high-quality JPEG image
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const isLandscape = canvas.width > canvas.height;
       
-      // Proportional dimensions based on the high-quality canvas scale
-      const pdfW = Math.round(canvas.width / scale);
-      const pdfH = Math.round(canvas.height / scale);
+      // Standard CR80 Size (85.6 mm x 53.98 mm) formatted to exactly 85 mm x 54 mm (8.5 cm x 5.4 cm)
+      const pdfW = isLandscape ? 85 : 54;
+      const pdfH = isLandscape ? 54 : 85;
       
       const pdf = new jsPDF({
         orientation: isLandscape ? 'landscape' : 'portrait',
-        unit: 'px',
+        unit: 'mm',
         format: [pdfW, pdfH],
         compress: false // Lossless PDF configuration
       });
       
-      // Render PNG onto PDF with lossless quality
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH, undefined, 'NONE');
+      // Render JPEG onto PDF with lossless quality
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH, undefined, 'NONE');
       
       const blob = pdf.output('blob');
       const blobUrl = URL.createObjectURL(blob);
@@ -24414,9 +24415,12 @@ const IDCardsModule = ({
                 animate={{ opacity: 1, scale: 1 }}
                 className="flex flex-col items-center gap-8"
               >
-                <div className="bg-white p-4 rounded-[32px] shadow-2xl" id={`card-${selectedPerson.id || selectedPerson.studentId}`}>
-                  {activeTab === 'student' && <IDCard person={selectedPerson} orientation={orientation} template={idTemplate} />}
-                  {activeTab === 'teacher' && <IDCard person={selectedPerson} type="teacher" orientation={orientation} template={idTemplate} />}
+                <div 
+                  className="bg-white p-4 rounded-[32px] shadow-2xl" 
+                  id={(activeTab !== 'student' && activeTab !== 'teacher') ? `card-${selectedPerson.id || selectedPerson.studentId}` : undefined}
+                >
+                  {activeTab === 'student' && <IDCard id={`card-${selectedPerson.id || selectedPerson.studentId}`} person={selectedPerson} orientation={orientation} template={idTemplate} />}
+                  {activeTab === 'teacher' && <IDCard id={`card-${selectedPerson.id || selectedPerson.studentId}`} type="teacher" person={selectedPerson} orientation={orientation} template={idTemplate} />}
                   {activeTab === 'hostel' && <HostelCard student={selectedPerson} />}
                   {activeTab === 'transfer' && <TransferCertificate student={selectedPerson} />}
                   {activeTab === 'migration' && <MigrationCertificate student={selectedPerson} />}
