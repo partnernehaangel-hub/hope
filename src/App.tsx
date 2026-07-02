@@ -835,6 +835,24 @@ const waitForAllFontsAndImages = async (element: HTMLElement): Promise<void> => 
   }
 };
 
+const copyInputValuesToClone = (original: HTMLElement, clone: HTMLElement) => {
+  try {
+    if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
+      (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
+    } else if (original.tagName === 'SELECT') {
+      (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
+    }
+  } catch (err) {}
+  
+  try {
+    const origChildren = Array.from(original.children);
+    const cloneChildren = Array.from(clone.children);
+    for (let i = 0; i < origChildren.length && i < cloneChildren.length; i++) {
+      copyInputValuesToClone(origChildren[i] as HTMLElement, cloneChildren[i] as HTMLElement);
+    }
+  } catch (err) {}
+};
+
 const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, timeoutMs = 15000): Promise<HTMLCanvasElement> => {
   // Pre-wait for all fonts and images to be fully loaded first
   await waitForAllFontsAndImages(element);
@@ -853,9 +871,17 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
   // Append clone directly to the main body to ensure 100% stable DOM lookup by html2canvas
   document.body.appendChild(clone);
 
-  // Copy computed styles recursively to the clone to freeze all classes and resolve OKLCH colors/Tailwind CSS variables
+  // Copy input values from original on-screen element to the clone
   try {
-    copyComputedStylesToClone(element, clone);
+    copyInputValuesToClone(element, clone);
+  } catch (err) {
+    console.warn('Failed to copy input values to clone:', err);
+  }
+
+  // Copy computed styles recursively from the clone to itself to freeze all classes and resolve OKLCH colors/Tailwind CSS variables
+  // using its natural, off-screen unsquished layout!
+  try {
+    copyComputedStylesToClone(clone, clone);
   } catch (err) {
     console.warn('Failed to copy computed styles to clone:', err);
   }
@@ -23530,16 +23556,19 @@ const IDCardsModule = ({
           { label: 'CONTACT NO.', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
         ];
 
-    const headerHeight = orientation === 'portrait' ? 'h-[175px]' : 'h-[145px]';
-    const headerPt = orientation === 'portrait' ? 'pt-10' : 'pt-8';
+    const headerHeight = orientation === 'portrait' ? 'h-[155px]' : 'h-[95px]';
+    const headerPt = orientation === 'portrait' ? 'pt-6' : 'pt-3';
 
     const fullName = `${person.name || ''} ${person.surname || ''}`.trim();
-    let nameFontSize = 'text-[16px]';
-    if (fullName.length > 25) {
+    let nameFontSize = 'text-[14px]';
+    if (fullName.length > 22) {
       nameFontSize = 'text-[11px]';
-    } else if (fullName.length > 18) {
-      nameFontSize = 'text-[13px]';
+    } else if (fullName.length > 14) {
+      nameFontSize = 'text-[12.5px]';
     }
+
+    const bodyPtClass = orientation === 'portrait' ? 'pt-7' : 'pt-6';
+    const bodyPbClass = orientation === 'portrait' ? 'pb-3' : 'pb-2.5';
 
     return (
       <div 
@@ -23552,44 +23581,78 @@ const IDCardsModule = ({
           imageRendering: 'auto'
         }}
       >
-        {/* Top 1/3 Colored Section - Safe padding for card cutting */}
-        <div className={`${headerBgClass} ${headerHeight} flex flex-col items-center justify-start relative ${headerPt} pl-6 pr-4 text-center`}>
-            {/* Top Border Accent */}
-            <div className="absolute top-0 left-0 w-full h-1 bg-black/10" />
-            
-            <div className="z-10 mb-1 flex items-center justify-center gap-2 max-w-full">
-               {schoolProfile?.logo && (
-                 <div className="w-8 h-8 bg-white rounded-lg p-0.5 border border-white/20 shrink-0 flex items-center justify-center shadow-md">
-                   <img src={getProxyImageUrl(schoolProfile.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
+        {/* Top Header Section */}
+        {orientation === 'portrait' ? (
+          <div className={`${headerBgClass} ${headerHeight} flex flex-col items-center justify-start relative ${headerPt} pl-6 pr-4 text-center`}>
+              {/* Top Border Accent */}
+              <div className="absolute top-0 left-0 w-full h-1 bg-black/10" />
+              
+              <div className="z-10 mb-1 flex items-center justify-center gap-2 max-w-full">
+                 {schoolProfile?.logo && (
+                   <div className="w-8 h-8 bg-white rounded-lg p-0.5 border border-white/20 shrink-0 flex items-center justify-center shadow-md">
+                     <img src={getProxyImageUrl(schoolProfile.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
+                   </div>
+                 )}
+                 <div className="text-center">
+                    <h2 className="text-amber-300 font-extrabold text-[12.5px] uppercase tracking-wider leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">{schoolName}</h2>
+                    <p className="text-[6.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[210px]">{schoolProfile?.address?.substring(0, 80)}</p>
+                    {schoolContact && (
+                       <p className="text-[6px] text-white font-black uppercase tracking-[0.1em] bg-black/20 px-1.5 py-0.5 rounded-full inline-block mt-0.5 leading-none">
+                         PH: {schoolContact}
+                       </p>
+                    )}
                  </div>
-               )}
-               <div className="text-center">
-                  <h2 className="text-amber-300 font-extrabold text-[12.5px] uppercase tracking-wider leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">{schoolName}</h2>
-                  <p className="text-[6.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[210px]">{schoolProfile?.address?.substring(0, 80)}</p>
-                  {schoolContact && (
-                     <p className="text-[6px] text-white font-black uppercase tracking-[0.1em] bg-black/20 px-1.5 py-0.5 rounded-full inline-block mt-0.5 leading-none">
-                       PH: {schoolContact}
-                     </p>
-                  )}
-               </div>
-            </div>
+              </div>
 
-            {/* QR Code Centered in Upper Middle - compact for safety margin and fixed sizing to prevent html2canvas shift */}
-            <div className="bg-white p-1 rounded-lg z-20 border border-slate-200/60 flex items-center justify-center shrink-0 mt-1" style={{ width: '56px', height: '56px' }}>
-                <QRCode value={idValue} size={48} level="M" style={{ width: '48px', height: '48px' }} />
-            </div>
+              {/* QR Code Centered in Upper Middle */}
+              <div className="bg-white p-1 rounded-lg z-20 border border-slate-200/60 flex items-center justify-center shrink-0 mt-1" style={{ width: '56px', height: '56px' }}>
+                  <QRCode value={idValue} size={48} level="M" style={{ width: '48px', height: '48px' }} />
+              </div>
 
-            {/* Identity Card Label Pill - Adjusted position, whitespace-nowrap and padding to prevent clipping */}
-            <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white z-30 shadow-md whitespace-nowrap">
-                <span className="text-[8px] font-black text-white uppercase tracking-widest">{isTeacher ? 'Staff' : 'Student'} ID CARD</span>
-            </div>
-        </div>
+              {/* Identity Card Label Pill */}
+              <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white z-30 shadow-md whitespace-nowrap">
+                  <span className="text-[8px] font-black text-white uppercase tracking-widest">{isTeacher ? 'Staff' : 'Student'} ID CARD</span>
+              </div>
+          </div>
+        ) : (
+          <div className={`${headerBgClass} ${headerHeight} flex items-center justify-between relative px-6 py-3 text-left`}>
+              {/* Top Border Accent */}
+              <div className="absolute top-0 left-0 w-full h-1 bg-black/10" />
+              
+              <div className="z-10 flex items-center gap-3 max-w-[70%] text-left">
+                 {schoolProfile?.logo && (
+                   <div className="w-9 h-9 bg-white rounded-lg p-0.5 border border-white/20 shrink-0 flex items-center justify-center shadow-md">
+                     <img src={getProxyImageUrl(schoolProfile.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
+                   </div>
+                 )}
+                 <div className="text-left">
+                    <h2 className="text-amber-300 font-extrabold text-[14px] uppercase tracking-wider leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] truncate max-w-[280px]">{schoolName}</h2>
+                    <p className="text-[7.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[280px]">{schoolProfile?.address?.substring(0, 100)}</p>
+                    {schoolContact && (
+                       <p className="text-[6.5px] text-white font-black uppercase tracking-[0.1em] bg-black/20 px-1.5 py-0.5 rounded-full inline-block mt-0.5 leading-none">
+                         PH: {schoolContact}
+                       </p>
+                    )}
+                 </div>
+              </div>
 
-        {/* Main Body - Redesigned for "Neatness" & Complete Visibility without any overlap */}
-        <div className="flex-1 bg-white pl-6 pr-4 pb-4 pt-11 flex flex-col min-w-0">
+              {/* QR Code on the Right */}
+              <div className="bg-white p-1 rounded-lg z-20 border border-slate-200/60 flex items-center justify-center shrink-0 shadow-sm" style={{ width: '52px', height: '52px' }}>
+                  <QRCode value={idValue} size={44} level="M" style={{ width: '44px', height: '44px' }} />
+              </div>
+
+              {/* Identity Card Label Pill */}
+              <div className="absolute -bottom-3.5 left-6 px-4 py-1 bg-slate-900 rounded-full flex items-center justify-center border-2 border-white z-30 shadow-md whitespace-nowrap">
+                  <span className="text-[7.5px] font-black text-white uppercase tracking-widest">{isTeacher ? 'Staff' : 'Student'} ID CARD</span>
+              </div>
+          </div>
+        )}
+
+        {/* Main Body - Redesigned for Complete Visibility without any overlap */}
+        <div className={`flex-1 bg-white pl-6 pr-4 ${bodyPbClass} ${bodyPtClass} flex flex-col min-w-0`}>
             <div className="flex gap-4 items-stretch mb-2">
                 {/* Photo Section & Quick Identifiers */}
-                <div className="shrink-0 flex flex-col items-center gap-1.5 w-24">
+                <div className="shrink-0 flex flex-col items-center gap-1 w-24">
                     <div className="w-24 h-28 border-2 border-slate-100 p-1 bg-white shadow-md rounded-xl overflow-hidden">
                         <div className="w-full h-full bg-slate-50 flex items-center justify-center overflow-hidden rounded-lg">
                             {person.photo ? (
@@ -23604,69 +23667,139 @@ const IDCardsModule = ({
                     </div>
 
                     {!isTeacher ? (
-                      <div className="flex flex-col items-center text-center mt-2 w-full gap-1.5">
-                        <div className="flex flex-col w-full text-center">
-                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">CLASS / SECTION</span>
-                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
-                            {person.class || 'N/A'} - {person.section || 'N/A'}
-                          </span>
-                        </div>
-                        <div className="flex flex-col w-full text-center">
-                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">ROLLNO</span>
-                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
-                            {person.rollNumber || person.rollNo || 'N/A'}
-                          </span>
-                        </div>
-                        <div className="mt-2 bg-white border border-slate-200 shadow-sm py-1 px-2.5 rounded-full inline-flex items-center gap-1.5 self-center">
-                          <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center shrink-0">
-                            <Droplet size={10} fill="white" className="text-white" />
+                      <div className={`flex flex-col items-center text-center mt-1 w-full ${orientation === 'portrait' ? 'gap-1' : 'gap-0.5'}`}>
+                        {orientation === 'portrait' ? (
+                          <>
+                            <div className="flex flex-col w-full text-center">
+                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">CLASS / SECTION</span>
+                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
+                                {person.class || 'N/A'} - {person.section || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="flex flex-col w-full text-center mt-0.5">
+                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">ROLLNO</span>
+                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
+                                {person.rollNumber || person.rollNo || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 bg-white border border-slate-200 shadow-sm py-0.5 px-2 rounded-full inline-flex items-center gap-1 self-center">
+                              <div className="w-3.5 h-3.5 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                                <Droplet size={8} fill="white" className="text-white" />
+                              </div>
+                              <span className="text-[8.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'B+'}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex flex-col w-full gap-1 mt-1">
+                            <div className="grid grid-cols-2 gap-1 w-full">
+                              <div className="flex flex-col text-center">
+                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">CLASS</span>
+                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
+                                  {person.class || 'N/A'}
+                                </span>
+                              </div>
+                              <div className="flex flex-col text-center">
+                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">ROLL</span>
+                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
+                                  {person.rollNumber || person.rollNo || 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="bg-white border border-slate-200 shadow-sm py-0.5 px-1.5 rounded-full inline-flex items-center gap-1 self-center">
+                              <div className="w-3 h-3 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                                <Droplet size={7} fill="white" className="text-white" />
+                              </div>
+                              <span className="text-[7.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'B+'}</span>
+                            </div>
                           </div>
-                          <span className="text-[9px] font-black text-slate-800">{person.bloodGroup || 'B+'}</span>
-                        </div>
+                        )}
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center text-center mt-2 w-full gap-1.5">
-                        <div className="flex flex-col w-full text-center">
-                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">DESIGNATION</span>
-                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
-                            {person.designation || 'Teacher'}
-                          </span>
-                        </div>
-                        <div className="flex flex-col w-full text-center">
-                          <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6.5px]">STAFF ID</span>
-                          <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1.5 rounded-xl border border-[#e2e8f0] text-[9.5px] mt-0.5 shadow-sm block text-center truncate">
-                            {person.staffId || person.id || 'N/A'}
-                          </span>
-                        </div>
-                        <div className="mt-2 bg-white border border-slate-200 shadow-sm py-1 px-2.5 rounded-full inline-flex items-center gap-1.5 self-center">
-                          <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center shrink-0">
-                            <Droplet size={10} fill="white" className="text-white" />
+                      <div className={`flex flex-col items-center text-center mt-1 w-full ${orientation === 'portrait' ? 'gap-1' : 'gap-0.5'}`}>
+                        {orientation === 'portrait' ? (
+                          <>
+                            <div className="flex flex-col w-full text-center">
+                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">DESIGNATION</span>
+                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
+                                {person.designation || 'Teacher'}
+                              </span>
+                            </div>
+                            <div className="flex flex-col w-full text-center mt-0.5">
+                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">STAFF ID</span>
+                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
+                                {person.staffId || person.id || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 bg-white border border-slate-200 shadow-sm py-0.5 px-2 rounded-full inline-flex items-center gap-1 self-center">
+                              <div className="w-3.5 h-3.5 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                                <Droplet size={8} fill="white" className="text-white" />
+                              </div>
+                              <span className="text-[8.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'N/A'}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex flex-col w-full gap-1 mt-1">
+                            <div className="grid grid-cols-2 gap-1 w-full">
+                              <div className="flex flex-col text-center">
+                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">DESIG.</span>
+                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
+                                  {person.designation || 'Teacher'}
+                                </span>
+                              </div>
+                              <div className="flex flex-col text-center">
+                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">STAFF ID</span>
+                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
+                                  {person.staffId || person.id || 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="bg-white border border-slate-200 shadow-sm py-0.5 px-1.5 rounded-full inline-flex items-center gap-1 self-center">
+                              <div className="w-3 h-3 bg-red-500 rounded-full flex items-center justify-center shrink-0">
+                                <Droplet size={7} fill="white" className="text-white" />
+                              </div>
+                              <span className="text-[7.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'N/A'}</span>
+                            </div>
                           </div>
-                          <span className="text-[9px] font-black text-slate-800">{person.bloodGroup || 'N/A'}</span>
-                        </div>
+                        )}
                       </div>
                     )}
                 </div>
 
                 {/* Details Section - Clean & Structured */}
                 <div className="flex-1 min-w-0 flex flex-col justify-start">
-                    <div className="mb-2">
-                      <h3 className={`font-black ${themeText} ${nameFontSize} uppercase tracking-tight leading-tight py-1 block break-words overflow-wrap-anywhere whitespace-normal line-clamp-2 max-h-[40px] overflow-hidden`}>
+                    <div className="mb-1.5">
+                      <h3 className={`font-black ${themeText} ${nameFontSize} uppercase tracking-tight leading-tight py-0.5 block break-words overflow-wrap-anywhere whitespace-normal line-clamp-2 max-h-[36px] overflow-hidden`}>
                           {fullName}
                       </h3>
                       <div className={`h-0.5 w-10 ${themeColor} rounded-full mt-0.5`} />
                     </div>
                     
-                    <div className="space-y-1.5 flex-1 mt-1">
-                        {rightDetails.map((item, idx) => (
-                            <div key={idx} className="flex flex-col text-[8.5px] leading-tight min-w-0 w-full">
-                                <span className="font-extrabold text-[#475569]/70 uppercase tracking-wider text-[6px] mb-0.5">{item.label}</span>
-                                <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-0.5 rounded-lg border border-[#e2e8f0] text-[8.5px] leading-snug min-h-[18px] flex items-center min-w-0 w-full break-words overflow-wrap-anywhere whitespace-normal ${item.label === 'ADDRESS' ? 'line-clamp-2 h-[26px] overflow-hidden' : 'line-clamp-1 overflow-hidden'}`}>
-                                  {item.value}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
+                    {orientation === 'portrait' ? (
+                      <div className="space-y-1 flex-1 mt-1">
+                          {rightDetails.map((item, idx) => (
+                              <div key={idx} className="block text-[8.5px] leading-tight min-w-0 w-full">
+                                  <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] mb-0.5 block leading-none">{item.label}</span>
+                                  <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1 rounded-lg border border-[#e2e8f0] text-[8px] leading-none block min-w-0 w-full ${item.label === 'ADDRESS' ? 'line-clamp-2 h-[26px] whitespace-normal leading-tight py-0.5' : 'truncate'}`}>
+                                    {item.value}
+                                  </span>
+                              </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-1 flex-1">
+                          {rightDetails.map((item, idx) => {
+                              const isFullWidth = item.label === 'ADDRESS';
+                              return (
+                                  <div key={idx} className={`block text-[8.5px] leading-tight min-w-0 ${isFullWidth ? 'col-span-2' : ''}`}>
+                                      <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] mb-0.5 block leading-none">{item.label}</span>
+                                      <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1 rounded-lg border border-[#e2e8f0] text-[8px] leading-none block min-w-0 w-full ${isFullWidth ? 'line-clamp-1 truncate' : 'truncate'}`}>
+                                        {item.value}
+                                      </span>
+                                  </div>
+                              );
+                          })}
+                      </div>
+                    )}
                 </div>
             </div>
 
@@ -23685,9 +23818,9 @@ const IDCardsModule = ({
                 <div className="text-center">
                      <div className="w-24 h-8 border-b border-slate-200 mx-auto mb-1 flex items-end justify-center relative" style={{ minHeight: '32px' }}>
                         {schoolProfile?.principalSignature ? (
-                          <img src={getProxyImageUrl(schoolProfile?.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply absolute bottom-0" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
+                           <img src={getProxyImageUrl(schoolProfile?.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply absolute bottom-0" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
                         ) : (
-                          <div className="text-[6px] text-slate-200 italic mb-1 uppercase font-black">Authorized Stamp</div>
+                           <div className="text-[6px] text-slate-200 italic mb-1 uppercase font-black">Authorized Stamp</div>
                         )}
                      </div>
                      <p className="text-[7px] font-black uppercase text-slate-400 tracking-[0.1em]">PRINCIPAL SIGN</p>
