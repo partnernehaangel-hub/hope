@@ -99,8 +99,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 import { toPng, toJpeg } from 'html-to-image';
+import { downloadIDCardPDF, downloadBatchIDCardsPDF } from './utils/pdfGenerator';
 import * as JSZipModule from 'jszip';
 const JSZip = ((JSZipModule as any).default || JSZipModule) as any;
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
@@ -132,344 +132,9 @@ type View = 'login' | 'dashboard' | 'register-student' | 'student-list' | 'setti
 
 // --- Utilities ---
 
-function oklchToRgb(l: number, c: number, hDeg: number): [number, number, number] {
-  const h = (hDeg * Math.PI) / 180;
-  const a = c * Math.cos(h);
-  const b = c * Math.sin(h);
 
-  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
-  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
-  const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
 
-  const l_cube = l_ * l_ * l_;
-  const m_cube = m_ * m_ * m_;
-  const s_cube = s_ * s_ * s_;
 
-  let r = +4.0767416621 * l_cube - 3.3077115913 * m_cube + 0.2309699292 * s_cube;
-  let g = -1.2684380046 * l_cube + 2.6097574011 * m_cube - 0.3413193965 * s_cube;
-  let b_val = -0.0041960863 * l_cube - 0.7034186147 * m_cube + 1.7076147010 * s_cube;
-
-  const f = (x: number) => {
-    if (x <= 0.0031308) {
-      return 12.92 * x;
-    }
-    return 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
-  };
-
-  r = Math.max(0, Math.min(1, f(r)));
-  g = Math.max(0, Math.min(1, f(g)));
-  b_val = Math.max(0, Math.min(1, f(b_val)));
-
-  return [
-    Math.round(r * 255),
-    Math.round(g * 255),
-    Math.round(b_val * 255)
-  ];
-}
-
-const convertOklchStringToRgb = (oklchStr: string): string => {
-  try {
-    const match = oklchStr.match(/oklch\(([^)]+)\)/i);
-    if (!match) return oklchStr;
-    const inner = match[1].trim().replace(/,/g, ' ');
-    
-    const [colorPart, alphaPart] = inner.split('/');
-    const coords = colorPart.trim().replace(/none/g, '0').split(/\s+/).filter(Boolean);
-    if (coords.length < 3) return oklchStr;
-    
-    let l = parseFloat(coords[0]);
-    if (coords[0].includes('%')) l = l / 100;
-    if (isNaN(l)) l = 0.5;
-    
-    let c = parseFloat(coords[1]);
-    if (coords[1].includes('%')) c = c / 100;
-    if (isNaN(c)) c = 0.15;
-    
-    let h = parseFloat(coords[2]);
-    if (coords[2].includes('deg')) h = parseFloat(coords[2].replace('deg', ''));
-    else if (coords[2].includes('rad')) h = (parseFloat(coords[2].replace('rad', '')) * 180) / Math.PI;
-    else if (coords[2].includes('turn')) h = parseFloat(coords[2].replace('turn', '')) * 360;
-    if (isNaN(h)) h = 0;
-    
-    const [r, g, b] = oklchToRgb(l, c, h);
-    if (isNaN(r) || isNaN(g) || isNaN(b)) {
-      return 'rgb(120, 120, 120)';
-    }
-    
-    if (alphaPart) {
-      let a = parseFloat(alphaPart.trim());
-      if (alphaPart.includes('%')) a = a / 100;
-      if (isNaN(a)) a = 1;
-      return `rgba(${r}, ${g}, ${b}, ${a})`;
-    } else {
-      return `rgb(${r}, ${g}, ${b})`;
-    }
-  } catch (err) {
-    console.error('Failed to convert oklch string:', oklchStr, err);
-    return 'rgb(120, 120, 120)';
-  }
-};
-
-function oklabToRgb(l: number, a: number, b: number): [number, number, number] {
-  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
-  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
-  const s_ = l - 0.0894841775 * a - 1.2914855480 * b;
-
-  const l_cube = l_ * l_ * l_;
-  const m_cube = m_ * m_ * m_;
-  const s_cube = s_ * s_ * s_;
-
-  let r = +4.0767416621 * l_cube - 3.3077115913 * m_cube + 0.2309699292 * s_cube;
-  let g = -1.2684380046 * l_cube + 2.6097574011 * m_cube - 0.3413193965 * s_cube;
-  let b_val = -0.0041960863 * l_cube - 0.7034186147 * m_cube + 1.7076147010 * s_cube;
-
-  const f = (x: number) => {
-    if (x <= 0.0031308) return 12.92 * x;
-    return 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
-  };
-
-  r = Math.max(0, Math.min(1, f(r)));
-  g = Math.max(0, Math.min(1, f(g)));
-  b_val = Math.max(0, Math.min(1, f(b_val)));
-
-  return [
-    Math.round(r * 255),
-    Math.round(g * 255),
-    Math.round(b_val * 255)
-  ];
-}
-
-const convertOklabStringToRgb = (oklabStr: string): string => {
-  try {
-    const match = oklabStr.match(/oklab\(([^)]+)\)/i);
-    if (!match) return oklabStr;
-    const inner = match[1].trim().replace(/,/g, ' ');
-    
-    const [colorPart, alphaPart] = inner.split('/');
-    const coords = colorPart.trim().replace(/none/g, '0').split(/\s+/).filter(Boolean);
-    if (coords.length < 3) return oklabStr;
-    
-    let l = parseFloat(coords[0]);
-    if (coords[0].includes('%')) l = l / 100;
-    if (isNaN(l)) l = 0.5;
-    
-    let a = parseFloat(coords[1]);
-    if (coords[1].includes('%')) a = a / 100;
-    if (isNaN(a)) a = 0;
-    
-    let b = parseFloat(coords[2]);
-    if (coords[2].includes('%')) b = b / 100;
-    if (isNaN(b)) b = 0;
-    
-    const [r, g, b_val] = oklabToRgb(l, a, b);
-    if (isNaN(r) || isNaN(g) || isNaN(b_val)) {
-      return 'rgb(120, 120, 120)';
-    }
-    
-    if (alphaPart) {
-      let alpha = parseFloat(alphaPart.trim());
-      if (alphaPart.includes('%')) alpha = alpha / 100;
-      if (isNaN(alpha)) alpha = 1;
-      return `rgba(${r}, ${g}, ${b_val}, ${alpha})`;
-    } else {
-      return `rgb(${r}, ${g}, ${b_val})`;
-    }
-  } catch (err) {
-    console.error('Failed to convert oklab string:', oklabStr, err);
-    return 'rgb(120, 120, 120)';
-  }
-};
-
-const parseColorToRgba = (colorStr: string): [number, number, number, number] => {
-  colorStr = colorStr.trim().toLowerCase();
-  if (colorStr.includes('oklch')) {
-    colorStr = convertOklchStringToRgb(colorStr);
-  } else if (colorStr.includes('oklab')) {
-    colorStr = convertOklabStringToRgb(colorStr);
-  }
-  
-  if (colorStr === 'transparent') return [0, 0, 0, 0];
-  if (colorStr === 'white') return [255, 255, 255, 1];
-  if (colorStr === 'black') return [0, 0, 0, 1];
-  
-  if (colorStr.startsWith('#')) {
-    const hex = colorStr.slice(1);
-    if (hex.length === 3) {
-      return [
-        parseInt(hex[0] + hex[0], 16),
-        parseInt(hex[1] + hex[1], 16),
-        parseInt(hex[2] + hex[2], 16),
-        1
-      ];
-    }
-    if (hex.length === 4) {
-      return [
-        parseInt(hex[0] + hex[0], 16),
-        parseInt(hex[1] + hex[1], 16),
-        parseInt(hex[2] + hex[2], 16),
-        parseInt(hex[3] + hex[3], 16) / 255
-      ];
-    }
-    if (hex.length === 6) {
-      return [
-        parseInt(hex.slice(0, 2), 16),
-        parseInt(hex.slice(2, 4), 16),
-        parseInt(hex.slice(4, 6), 16),
-        1
-      ];
-    }
-    if (hex.length === 8) {
-      return [
-        parseInt(hex.slice(0, 2), 16),
-        parseInt(hex.slice(2, 4), 16),
-        parseInt(hex.slice(4, 6), 16),
-        parseInt(hex.slice(6, 8), 16) / 255
-      ];
-    }
-  }
-  
-  const rgbMatch = colorStr.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
-  if (rgbMatch) {
-    return [
-      parseInt(rgbMatch[1]),
-      parseInt(rgbMatch[2]),
-      parseInt(rgbMatch[3]),
-      rgbMatch[4] !== undefined ? parseFloat(rgbMatch[4]) : 1
-    ];
-  }
-
-  return [120, 120, 120, 1];
-};
-
-const convertColorMixStringToRgb = (colorMixStr: string): string => {
-  try {
-    const match = colorMixStr.match(/color-mix\(\s*in\s+([a-zA-Z0-9-]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)/i);
-    if (!match) return 'rgb(120, 120, 120)';
-    
-    const part1 = match[2].trim();
-    const part2 = match[3].trim();
-    
-    const parsePart = (part: string) => {
-      const pctMatch = part.match(/(.+?)\s+([\d.]+)%?$/);
-      if (pctMatch) {
-        return {
-          color: pctMatch[1].trim(),
-          pct: parseFloat(pctMatch[2])
-        };
-      }
-      return { color: part, pct: null };
-    };
-    
-    const p1 = parsePart(part1);
-    const p2 = parsePart(part2);
-    
-    const c1 = parseColorToRgba(p1.color);
-    const c2 = parseColorToRgba(p2.color);
-    
-    let w1 = 50;
-    let w2 = 50;
-    
-    if (p1.pct !== null && p2.pct !== null) {
-      w1 = p1.pct;
-      w2 = p2.pct;
-    } else if (p1.pct !== null) {
-      w1 = p1.pct;
-      w2 = 100 - w1;
-    } else if (p2.pct !== null) {
-      w2 = p2.pct;
-      w1 = 100 - w2;
-    }
-    
-    const totalW = w1 + w2;
-    if (isNaN(totalW) || totalW <= 0) return 'rgba(120,120,120,1)';
-    
-    const ratio1 = w1 / totalW;
-    const ratio2 = w2 / totalW;
-    
-    const r = Math.round(c1[0] * ratio1 + c2[0] * ratio2);
-    const g = Math.round(c1[1] * ratio1 + c2[1] * ratio2);
-    const b = Math.round(c1[2] * ratio1 + c2[2] * ratio2);
-    const a = parseFloat((c1[3] * ratio1 + c2[3] * ratio2).toFixed(3));
-    
-    if (isNaN(r) || isNaN(g) || isNaN(b) || isNaN(a)) {
-      return 'rgb(120, 120, 120)';
-    }
-    
-    return `rgba(${r}, ${g}, ${b}, ${a})`;
-  } catch (err) {
-    console.error('Failed to convert color-mix string:', colorMixStr, err);
-    return 'rgb(120, 120, 120)';
-  }
-};
-
-const resolveColorToRgbOrRgba = (colorStr: string, _elementForContext?: HTMLElement): string => {
-  const lower = colorStr.toLowerCase();
-  if (lower.includes('oklch')) {
-    return convertOklchStringToRgb(colorStr);
-  }
-  if (lower.includes('oklab')) {
-    return convertOklabStringToRgb(colorStr);
-  }
-  if (lower.includes('color-mix')) {
-    return convertColorMixStringToRgb(colorStr);
-  }
-  
-  return 'rgb(120, 120, 120)';
-};
-
-const replaceColorFunctionsInString = (text: string, elementForContext?: HTMLElement): string => {
-  if (!text) return text;
-  
-  let modifiedText = text;
-  
-  // 1. Replace oklch(...)
-  modifiedText = modifiedText.replace(/oklch\(([^)]+)\)/gi, (m) => {
-    const resolved = resolveColorToRgbOrRgba(m, elementForContext);
-    return resolved || m;
-  });
-  
-  // 2. Replace oklab(...)
-  modifiedText = modifiedText.replace(/oklab\(([^)]+)\)/gi, (m) => {
-    const resolved = resolveColorToRgbOrRgba(m, elementForContext);
-    return resolved || m;
-  });
-  
-  // 3. Replace color-mix(...)
-  try {
-    let index = modifiedText.toLowerCase().lastIndexOf('color-mix(');
-    let limit = 0;
-    while (index !== -1 && limit < 1000) {
-      limit++;
-      let parenCount = 1;
-      let end = -1;
-      for (let i = index + 10; i < modifiedText.length; i++) {
-        if (modifiedText[i] === '(') parenCount++;
-        else if (modifiedText[i] === ')') parenCount--;
-        if (parenCount === 0) {
-          end = i;
-          break;
-        }
-      }
-      if (end !== -1) {
-        const fullCall = modifiedText.slice(index, end + 1);
-        const resolved = resolveColorToRgbOrRgba(fullCall, elementForContext);
-        modifiedText = modifiedText.slice(0, index) + resolved + modifiedText.slice(end + 1);
-      } else {
-        modifiedText = modifiedText.slice(0, index) + 'rgba(120,120,120,1)' + modifiedText.slice(index + 10);
-      }
-      index = modifiedText.toLowerCase().lastIndexOf('color-mix(');
-    }
-  } catch (err) {
-    console.error('Error replacing color-mix in string:', err);
-  }
-  
-  return modifiedText;
-};
-
-const convertAllPageStyles = async (): Promise<void> => {
-  // Completely no-op to avoid scanning entire stylesheets on the main thread
-  return;
-};
 
 const getProxyImageUrl = (url: string | null | undefined): string => {
   if (!url) return '';
@@ -478,591 +143,7 @@ const getProxyImageUrl = (url: string | null | undefined): string => {
   return `/api/proxy-image?url=${encodeURIComponent(url)}`;
 };
 
-const imageBase64Cache = new Map<string, string>();
 
-const getAsBase64 = async (url: string): Promise<string> => {
-  if (!url) return '';
-  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
-  if (imageBase64Cache.has(url)) {
-    return imageBase64Cache.get(url)!;
-  }
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased timeout to 30s to allow stable loading of high-quality assets
-
-  try {
-    const proxyUrl = getProxyImageUrl(url);
-    const response = await fetch(proxyUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) throw new Error('Fetch failed');
-    const blob = await response.blob();
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-    imageBase64Cache.set(url, base64);
-    return base64;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.warn('Failed to convert image to base64, using transparent fallback:', url, error);
-    const fallback = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    // Cache the fallback temporarily so we don't spam broken requests
-    imageBase64Cache.set(url, fallback);
-    return fallback;
-  }
-};
-
-// High-fidelity Font Preloading Utility
-const preloadFonts = async (fontNames: string[] = ['Inter', 'Space Grotesk', 'JetBrains Mono', 'Playfair Display']): Promise<void> => {
-  if (!document.fonts) return;
-  try {
-    const loadPromises = fontNames.map(font => {
-      try {
-        return document.fonts.load(`1em ${font}`);
-      } catch (e) {
-        return Promise.resolve(null);
-      }
-    });
-    await Promise.all(loadPromises);
-    await document.fonts.ready;
-  } catch (err) {
-    console.warn('Font preloading warning:', err);
-  }
-};
-
-// Robust Preload Image with Retries Utility to guarantee images never disappear
-const preloadImageWithRetry = async (url: string, retries = 3, delay = 1000): Promise<string> => {
-  if (!url) return '';
-  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
-  
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const base64 = await getAsBase64(url);
-      if (base64 && !base64.startsWith('data:image/gif')) {
-        return base64;
-      }
-      throw new Error('Transparent or empty fallback returned');
-    } catch (err) {
-      if (attempt === retries) {
-        console.error(`Failed to preload image after ${retries} attempts: ${url}`, err);
-        return url; // fallback to original
-      }
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  return url;
-};
-
-const inlineAllImagesInElement = async (element: HTMLElement): Promise<void> => {
-  const images = element.getElementsByTagName('img');
-  const promises: Promise<void>[] = [];
-  
-  for (let i = 0; i < images.length; i++) {
-    const img = images[i];
-    const src = img.getAttribute('src');
-    if (src && !src.startsWith('data:') && !src.startsWith('blob:')) {
-      const promise = getAsBase64(src).then(base64 => {
-        img.src = base64;
-        img.removeAttribute('srcset');
-        img.removeAttribute('crossorigin');
-      });
-      promises.push(promise);
-    }
-  }
-  
-  await Promise.all(promises);
-};
-
-const resolveSolidColorFromClasses = (classList: DOMTokenList): string | null => {
-  // 1. Look for inline hex in classes like from-[#003366] or to-[#0047AB]
-  for (let i = 0; i < classList.length; i++) {
-    const cls = classList[i];
-    const hexMatch = cls.match(/(?:from|to|via)-\[#([0-9a-fA-F]{3,8})\]/);
-    if (hexMatch) {
-      return '#' + hexMatch[1];
-    }
-  }
-  
-  // 2. Look for named tailwind colors
-  const colorMap: Record<string, string> = {
-    'slate-950': '#020617',
-    'slate-900': '#0f172a',
-    'slate-800': '#1e293b',
-    'slate-700': '#334155',
-    'indigo-600': '#4f46e5',
-    'blue-600': '#2563eb',
-    'blue-700': '#1d4ed8',
-    'emerald-600': '#059669',
-    'emerald-700': '#047857',
-    'orange-600': '#ea580c',
-    'orange-700': '#c2410c',
-    'rose-600': '#e11d48',
-    'rose-700': '#be123c',
-    'rose-500': '#f43f5e',
-    'pink-600': '#db2777',
-    'amber-800': '#92400e',
-    'amber-600': '#d97706',
-    'primary': '#0056b3'
-  };
-  
-  for (let i = 0; i < classList.length; i++) {
-    const cls = classList[i];
-    for (const [key, val] of Object.entries(colorMap)) {
-      if (cls.includes(key)) {
-        return val;
-      }
-    }
-  }
-  return null;
-};
-
-const cleanCssGradientsAndColors = (cssText: string): string => {
-  if (!cssText) return cssText;
-  
-  try {
-    // Helper to convert OKLCH to RGB mathematically to support Tailwind CSS v4 colors flawlessly
-    const convertOklchToRgb = (match: string, lStr: string, cStr: string, hStr: string, aStr?: string): string => {
-      if (lStr.includes('var(') || cStr.includes('var(') || hStr.includes('var(')) {
-        return 'rgb(59, 130, 246)'; // Safe Tailwind Blue fallback for variables
-      }
-      
-      let L = parseFloat(lStr);
-      if (lStr.includes('%')) L /= 100;
-      
-      let C = parseFloat(cStr);
-      if (cStr.includes('%')) C /= 100;
-      
-      let H = parseFloat(hStr);
-      if (hStr.includes('rad')) {
-        H = parseFloat(hStr) * (180 / Math.PI);
-      } else if (hStr.includes('turn')) {
-        H = parseFloat(hStr) * 360;
-      } else if (hStr.includes('deg')) {
-        H = parseFloat(hStr);
-      }
-      
-      if (isNaN(L)) L = 0.5;
-      if (isNaN(C)) C = 0.15;
-      if (isNaN(H)) H = 220; // Default slate blue hue
-      
-      // Convert OKLCH to OKLAB
-      const hRad = (H * Math.PI) / 180;
-      const a_lab = C * Math.cos(hRad);
-      const b_lab = C * Math.sin(hRad);
-      
-      // Convert OKLAB to LMS
-      const l_prime = L + 0.3963377774 * a_lab + 0.2158037573 * b_lab;
-      const m_prime = L - 0.1055613458 * a_lab - 0.0638541747 * b_lab;
-      const s_prime = L - 0.0894841775 * a_lab - 1.2914855378 * b_lab;
-      
-      // LMS to linear LMS (cube power)
-      const l = l_prime * l_prime * l_prime;
-      const m = m_prime * m_prime * m_prime;
-      const s = s_prime * s_prime * s_prime;
-      
-      // LMS to linear sRGB
-      const rLinear = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
-      const gLinear = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
-      const bLinear = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s;
-      
-      // Linear to non-linear sRGB (gamma correction)
-      const gamma = (c: number) => {
-        if (c <= 0.0031308) {
-          return 12.92 * c;
-        } else {
-          return 1.055 * Math.pow(c, 1 / 2.4) - 0.05;
-        }
-      };
-      
-      const r = Math.max(0, Math.min(255, Math.round(gamma(rLinear) * 255)));
-      const g = Math.max(0, Math.min(255, Math.round(gamma(gLinear) * 255)));
-      const b = Math.max(0, Math.min(255, Math.round(gamma(bLinear) * 255)));
-      
-      let alpha = 1;
-      if (aStr) {
-        if (aStr.includes('var(')) {
-          alpha = 1;
-        } else {
-          alpha = parseFloat(aStr);
-          if (aStr.includes('%')) alpha /= 100;
-        }
-        if (isNaN(alpha)) alpha = 1;
-        alpha = Math.max(0, Math.min(1, alpha));
-      }
-      
-      if (aStr && alpha < 1) {
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-      }
-      return `rgb(${r}, ${g}, ${b})`;
-    };
-
-    // Regex to capture all variations of oklch(L C H / alpha) or oklch(L C H)
-    const oklchRegex = /oklch\(\s*([^,\s/)]+)[,\s]+([^,\s/)]+)[,\s]+([^,\s/)]+)(?:\s*[\s/,]\s*([^)]+))?\s*\)/gi;
-    let cleaned = cssText.replace(oklchRegex, (match, l, c, h, a) => {
-      try {
-        return convertOklchToRgb(match, l, c, h, a);
-      } catch (e) {
-        return 'rgb(59, 130, 246)'; // Safe fallback
-      }
-    });
-
-    // Replace other modern CSS features to be safe with standard fallbacks
-    cleaned = cleaned.replace(/oklab\((?:[^()]+|\([^()]*\))*\)/gi, 'rgb(100, 116, 139)');
-    cleaned = cleaned.replace(/color-mix\((?:[^()]+|\((?:[^()]+|\([^()]*\))*\))*\)/gi, 'rgb(59, 130, 246)');
-
-    // Fast gradient replacement: if a gradient contains CSS variables or modern features, replace it with none to avoid Canvas crash
-    cleaned = cleaned.replace(/(?:linear|radial|conic|repeating-linear|repeating-radial)-gradient\((?:[^()]+|\([^()]*\))*\)/gi, (match) => {
-      if (match.includes('var(') || match.includes('NaN')) {
-        return 'none';
-      }
-      return match;
-    });
-
-    return cleaned;
-  } catch (err) {
-    console.error('Error in cleanCssGradientsAndColors:', err);
-    return cssText;
-  }
-};
-
-const resolveUnsupportedStylesForHtml2Canvas = (original: HTMLElement, clone: HTMLElement) => {
-  if (!original || !clone) return;
-  
-  try {
-    const computed = window.getComputedStyle(original);
-    
-    // We only resolve styles that html2canvas struggles to parse
-    // especially modern CSS colors, gradients, shadows, and variables
-    const propsToProcess = [
-      'backgroundColor',
-      'color',
-      'borderColor',
-      'borderTopColor',
-      'borderRightColor',
-      'borderBottomColor',
-      'borderLeftColor',
-      'backgroundImage',
-      'fill',
-      'stroke',
-      'boxShadow',
-      'textShadow',
-      'outlineColor',
-      'textDecorationColor'
-    ];
-
-    if (clone.style) {
-      for (const prop of propsToProcess) {
-        try {
-          const val = computed[prop as any];
-          if (val && typeof val === 'string') {
-            if (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix') || val.includes('var(') || prop === 'backgroundImage') {
-              const cleaned = cleanCssGradientsAndColors(val);
-              if (cleaned && cleaned !== 'none') {
-                clone.style[prop as any] = cleaned;
-              }
-            } else {
-              // Always resolve computed values to absolute values (rgb/rgba/px) to avoid variable resolution issues
-              clone.style[prop as any] = val;
-            }
-          }
-        } catch (_) {}
-      }
-      
-      // Freeze typography styles with absolute computed values to prevent font or inheritance shift
-      try {
-        clone.style.fontFamily = computed.fontFamily;
-        clone.style.fontSize = computed.fontSize;
-        clone.style.fontWeight = computed.fontWeight;
-        clone.style.lineHeight = computed.lineHeight;
-      } catch (_) {}
-
-      // Freeze letter-spacing to normal to prevent html2canvas character overlapping bugs
-      try {
-        const ls = computed.letterSpacing;
-        if (ls && ls !== 'normal') {
-          clone.style.letterSpacing = 'normal';
-        }
-      } catch (_) {}
-    }
-
-    // Preserve dynamic user-entered form inputs, textareas, and selects
-    if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
-      (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
-    } else if (original.tagName === 'SELECT') {
-      (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
-    }
-  } catch (err) {
-    console.error('Error in resolveUnsupportedStylesForHtml2Canvas:', err);
-  }
-
-  // Recurse down children in a separate block for absolute robustness
-  try {
-    const originalChildren = Array.from(original.children);
-    const cloneChildren = Array.from(clone.children);
-    for (let i = 0; i < originalChildren.length && i < cloneChildren.length; i++) {
-      const origChild = originalChildren[i] as HTMLElement;
-      const cloneChild = cloneChildren[i] as HTMLElement;
-      if (origChild && cloneChild) {
-        resolveUnsupportedStylesForHtml2Canvas(origChild, cloneChild);
-      }
-    }
-  } catch (recurseErr) {
-    console.error('Error in resolveUnsupportedStylesForHtml2Canvas children recursion:', recurseErr);
-  }
-};
-
-const waitForAllFontsAndImages = async (element: HTMLElement): Promise<void> => {
-  try {
-    if (document.fonts && typeof document.fonts.ready !== 'undefined') {
-      await document.fonts.ready;
-    }
-  } catch (e) {
-    console.warn('Failed to wait for fonts ready:', e);
-  }
-
-  try {
-    const images = Array.from(element.getElementsByTagName('img'));
-    const loadPromises = images.map(img => {
-      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-        setTimeout(() => resolve(), 15000); // 15 seconds per image timeout fallback
-      });
-    });
-    // Overall images load wait capped to 30 seconds max for production-grade robustness
-    await Promise.race([
-      Promise.all(loadPromises),
-      new Promise<void>(resolve => setTimeout(resolve, 30000))
-    ]);
-  } catch (e) {
-    console.warn('Failed to wait for images load:', e);
-  }
-};
-
-const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, timeoutMs = 15000): Promise<HTMLCanvasElement> => {
-  // Pre-wait for all fonts and images to be fully loaded first
-  await waitForAllFontsAndImages(element);
-  
-  // Create a clean container clone
-  const clone = element.cloneNode(true) as HTMLElement;
-  
-  // Create an invisible wrapper container as a sibling of the original element to inherit all context/variables
-  const parent = element.parentNode || document.body;
-  const wrapper = document.createElement('div');
-  wrapper.style.width = '0px';
-  wrapper.style.height = '0px';
-  wrapper.style.overflow = 'hidden';
-  wrapper.style.position = 'absolute';
-  wrapper.style.top = '-9999px';
-  wrapper.style.left = '-9999px';
-  wrapper.style.pointerEvents = 'none';
-  wrapper.style.visibility = 'visible';
-  wrapper.style.display = 'block';
-
-  // Set style to be positioned relative so it flows naturally in its container context
-  clone.style.position = 'relative';
-  clone.style.top = '0px';
-  clone.style.left = '0px';
-  clone.style.visibility = 'visible';
-  clone.style.display = 'block';
-  clone.style.transform = 'none'; // reset any outer CSS transforms
-  
-  // Lock outer sizes exactly to match the on-screen rendering pixel-by-pixel
-  const width = element.offsetWidth || 325;
-  const height = element.offsetHeight || 512;
-  clone.style.width = `${width}px`;
-  clone.style.height = `${height}px`;
-
-  wrapper.appendChild(clone);
-  parent.appendChild(wrapper);
-
-  // Copy input values and recursively resolve modern OKLCH colors, gradients, and CSS variables on the clone using their clean, computed RGB values
-  try {
-    resolveUnsupportedStylesForHtml2Canvas(element, clone);
-  } catch (err) {
-    console.warn('Failed to resolve unsupported styles for clone:', err);
-  }
-
-  // Inline all images in the clone to Base64 to guarantee stable local rendering with zero CORS overhead
-  try {
-    await inlineAllImagesInElement(clone);
-  } catch (err) {
-    console.warn('Failed to inline images in element before html2canvas:', err);
-  }
-
-  const finalTimeoutMs = Math.max(timeoutMs, 15000);
-
-  // Monkeypatch addColorStop to ignore NaN or non-finite offsets (safety first!)
-  const originalAddColorStop = (CanvasGradient.prototype as any).addColorStop;
-  (CanvasGradient.prototype as any).addColorStop = function(this: any, offset: number, color: string) {
-    if (typeof offset !== 'number' || isNaN(offset) || !isFinite(offset)) {
-      offset = 0;
-    }
-    offset = Math.max(0, Math.min(1, offset));
-    
-    let cleanedColor = color;
-    if (typeof color === 'string') {
-      try {
-        cleanedColor = cleanCssGradientsAndColors(color);
-      } catch (err) {
-        cleanedColor = color;
-      }
-    }
-    
-    try {
-      originalAddColorStop.call(this, offset, cleanedColor);
-    } catch (err) {
-      console.warn('Failed to add color stop:', offset, cleanedColor, err);
-      try {
-        originalAddColorStop.call(this, offset, '#0047AB');
-      } catch (_) {}
-    }
-  };
-
-  // Temporarily stub document.styleSheets to return [] to prevent html2canvas
-  // from scanning and parsing stylesheets that contain OKLCH or css variables which cause crashing.
-  let styleSheetsOverridden = false;
-  try {
-    Object.defineProperty(document, 'styleSheets', {
-      get() {
-        return [];
-      },
-      configurable: true
-    });
-    styleSheetsOverridden = true;
-  } catch (e) {
-    console.warn('Failed to override document.styleSheets:', e);
-  }
-
-  // CRITICAL SAFETYSUB: Override window.getComputedStyle to intercept oklch, oklab, and color-mix
-  // returned natively by the browser for Tailwind CSS v4 variables, completely preventing html2canvas from crashing!
-  const originalGetComputedStyle = window.getComputedStyle;
-  let getComputedStyleOverridden = false;
-  try {
-    window.getComputedStyle = function(elt, pseudoElt) {
-      let style: CSSStyleDeclaration;
-      try {
-        const win = (elt && elt.ownerDocument && elt.ownerDocument.defaultView) || window;
-        if (win !== window) {
-          style = win.getComputedStyle(elt, pseudoElt);
-        } else {
-          style = originalGetComputedStyle(elt, pseudoElt);
-        }
-      } catch (err) {
-        try {
-          style = originalGetComputedStyle(elt, pseudoElt);
-        } catch (_) {
-          return {} as CSSStyleDeclaration;
-        }
-      }
-
-      return new Proxy(style, {
-        get(target, prop) {
-          if (prop === 'getPropertyValue') {
-            return function(propertyName: string) {
-              try {
-                const val = target.getPropertyValue(propertyName);
-                if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
-                  return cleanCssGradientsAndColors(val);
-                }
-                return val;
-              } catch (e) {
-                return '';
-              }
-            };
-          }
-          try {
-            const val = Reflect.get(target, prop);
-            if (typeof val === 'function') {
-              return val.bind(target);
-            }
-            if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
-              return cleanCssGradientsAndColors(val);
-            }
-            return val;
-          } catch (e) {
-            return '';
-          }
-        }
-      });
-    };
-    getComputedStyleOverridden = true;
-  } catch (e) {
-    console.warn('Failed to override window.getComputedStyle:', e);
-  }
-
-  try {
-    const enhancedOptions = {
-      ...options,
-      scale: options.scale || Math.max(window.devicePixelRatio || 1, 4),
-      useCORS: true,
-      allowTaint: false,
-      backgroundColor: '#ffffff',
-      logging: false,
-      foreignObjectRendering: false, // Prevents SVG rendering failures
-      imageTimeout: 30000,
-      removeContainer: true,
-      scrollX: 0,
-      scrollY: 0,
-      width: width,
-      height: height,
-      windowWidth: width,
-      windowHeight: height,
-    };
-
-    const canvas = await Promise.race([
-      html2canvas(clone, enhancedOptions),
-      new Promise<HTMLCanvasElement>((_, reject) => 
-        setTimeout(() => reject(new Error('html2canvas rendering timed out')), finalTimeoutMs)
-      )
-    ]);
-
-    return canvas;
-  } finally {
-    // Remove the temporary wrapper and clone from DOM
-    try {
-      if (wrapper && wrapper.parentNode) {
-        wrapper.parentNode.removeChild(wrapper);
-      }
-    } catch (cleanErr) {
-      console.warn('Failed to remove temporary wrapper:', cleanErr);
-    }
-
-    // Restore original getComputedStyle
-    if (getComputedStyleOverridden) {
-      try {
-        window.getComputedStyle = originalGetComputedStyle;
-      } catch (e) {
-        console.warn('Failed to restore window.getComputedStyle:', e);
-      }
-    }
-
-    // Restore original addColorStop
-    (CanvasGradient.prototype as any).addColorStop = originalAddColorStop;
-
-    // Restore original styleSheets descriptor
-    if (styleSheetsOverridden) {
-      try {
-        delete (document as any).styleSheets;
-      } catch (e) {
-        console.warn('Failed to delete document.styleSheets:', e);
-      }
-      try {
-        // Redefine original descriptor to guarantee restoration of original style sheets
-        const protoDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'styleSheets');
-        if (protoDesc) {
-          Object.defineProperty(document, 'styleSheets', protoDesc);
-        }
-      } catch (redefineErr) {
-        console.warn('Failed to redefine document.styleSheets:', redefineErr);
-      }
-    }
-  }
-};
 
 const extractIdFromQR = (text: string, paramName: string = 'id') => {
   if (text && text.startsWith('http')) {
@@ -8920,30 +8001,15 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
     if (receiptRef.current) {
       try {
         const element = receiptRef.current;
-        let canvas;
-        try {
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 3, // Higher scale for better clarity on thermal printers
-            useCORS: true,
-            logging: false,
-            imageTimeout: 3000,
-            backgroundColor: '#ffffff'
-          }, 6000);
-          // Verify exportability
-          canvas.toDataURL('image/png');
-        } catch (corsError) {
-          console.warn('CORS html2canvas failed for receipt print, retrying without external images...', corsError);
-          canvas = await html2canvasWithTimeout(element, {
-            scale: 3,
-            useCORS: false,
-            logging: false,
-            imageTimeout: 3000,
-            backgroundColor: '#ffffff'
-          }, 6000);
-        }
+        const imgData = await toPng(element, {
+          pixelRatio: 3, // Higher scale for better clarity on thermal printers
+          cacheBust: true,
+          style: {
+            transform: 'none',
+            transformOrigin: 'top left',
+          }
+        });
         
-        const imgData = canvas.toDataURL('image/png');
-
         const iframe = document.createElement('iframe');
         iframe.style.position = 'fixed';
         iframe.style.right = '0';
@@ -8999,33 +8065,20 @@ const ReceiptModal = ({ transaction, schoolProfile, onClose, students = [] }: { 
   const handleDownloadPDF = async () => {
     if (receiptRef.current) {
       try {
-        let canvas;
-        try {
-          canvas = await html2canvasWithTimeout(receiptRef.current, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            imageTimeout: 3000
-          }, 6000);
-          // Verify exportability
-          canvas.toDataURL('image/jpeg', 0.95);
-        } catch (corsError) {
-          console.warn('CORS html2canvas failed for receipt PDF download, retrying without external images...', corsError);
-          canvas = await html2canvasWithTimeout(receiptRef.current, {
-            scale: 2,
-            useCORS: false,
-            logging: false,
-            imageTimeout: 3000
-          }, 6000);
-        }
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        const imgData = await toJpeg(receiptRef.current, {
+          pixelRatio: 2,
+          cacheBust: true,
+          style: {
+            transform: 'none',
+            transformOrigin: 'top left',
+          }
+        });
         
-        // Determine PDF format based on print size
-        const pdfFormat = printSize === '58mm' ? [164, (canvas.height * 164) / canvas.width] : 'a4';
+        // Create jsPDF using standard formats
         const pdf = new jsPDF({
           orientation: 'portrait',
           unit: 'px',
-          format: pdfFormat
+          format: printSize === '58mm' ? [164, 400] : 'a4'
         });
         
         const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -17753,7 +16806,6 @@ const schoolMigrations = `
 
   useEffect(() => {
     fetchAllData();
-    convertAllPageStyles();
   }, [supabase]);
 
   const [taxes, setTaxes] = useState(0);
@@ -24329,10 +23381,53 @@ const IDCardsModule = ({
 
   const handleDownloadPDF = async (person: any) => {
     if (!person) return;
+
+    const isIdCard = ['student', 'teacher', 'hostel'].includes(activeTab);
+
+    if (isIdCard) {
+      setGenerationProgress({
+        active: true,
+        current: 0,
+        total: 1,
+        message: 'Initializing vector engine...'
+      });
+      try {
+        const cardType = activeTab as 'student' | 'teacher' | 'hostel';
+        await downloadIDCardPDF(
+          person,
+          cardType,
+          orientation,
+          {
+            name: schoolProfile.name,
+            address: schoolProfile.address,
+            contact: schoolProfile.contact,
+            logo: schoolProfile.logo,
+            principalSignature: schoolProfile.principalSignature,
+            currentSession: schoolProfile.currentSession,
+          },
+          (msg) => {
+            setGenerationProgress({
+              active: true,
+              current: 1,
+              total: 1,
+              message: msg,
+            });
+          }
+        );
+      } catch (error: any) {
+        console.error('Error generating vector PDF:', error);
+        alert(`Could not download vector PDF: ${error.message || error}`);
+      } finally {
+        setGenerationProgress(null);
+      }
+      return;
+    }
+
+    // Fallback for non-ID cards (Certificates & Marksheets)
     const cardId = `card-${person.id || person.studentId}`;
     const element = document.getElementById(cardId);
     if (!element) {
-      alert('Card element not found on screen. Please make sure the card is visible.');
+      alert('Document preview element not found. Please ensure it is visible.');
       return;
     }
 
@@ -24340,76 +23435,52 @@ const IDCardsModule = ({
       active: true,
       current: 0,
       total: 1,
-      message: `Preloading fonts and assets...`
+      message: `Preparing high-resolution rendering...`
     });
 
     try {
-      // 1. Wait for all fonts to be fully loaded and preloaded
-      await preloadFonts(['Inter', 'Space Grotesk', 'JetBrains Mono', 'Playfair Display']);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      setGenerationProgress({
+        active: true,
+        current: 1,
+        total: 1,
+        message: `Rendering document canvas...`
+      });
 
-      // 2. Identify all image tags and convert them to Base64 using robust preloader with retry
-      const images = Array.from(element.getElementsByTagName('img'));
-      for (let i = 0; i < images.length; i++) {
-        const img = images[i];
-        const src = img.getAttribute('src');
-        if (src && !src.startsWith('data:')) {
-          setGenerationProgress({
-            active: true,
-            current: i,
-            total: images.length,
-            message: `Converting and loading asset ${i + 1} of ${images.length}...`
-          });
-          
-          try {
-            const base64 = await preloadImageWithRetry(src, 3, 1000);
-            if (base64) {
-              img.setAttribute('src', base64);
-              // Force local cache refresh on the image tag
-              img.src = base64;
-            }
-          } catch (imgErr) {
-            console.warn('Asset preloader failure:', src, imgErr);
-          }
+      const isLandscape = orientation === 'landscape';
+      let pdfW = isLandscape ? 85 : 54;
+      let pdfH = isLandscape ? 54 : 85;
+
+      // Adjust dimensions for certificates to keep correct aspect ratio
+      if (['transfer', 'migration', 'awards', 'experience', 'appraisal', 'marksheet'].includes(activeTab)) {
+        if (activeTab === 'transfer' || activeTab === 'marksheet') {
+          pdfW = 210; // A4 Portrait
+          pdfH = 297;
+        } else {
+          pdfW = 297; // A4 Landscape
+          pdfH = 210;
         }
       }
 
-      setGenerationProgress({
-        active: true,
-        current: images.length,
-        total: images.length,
-        message: `Rendering high-resolution vector canvas...`
+      const dataUrl = await toPng(element, {
+        pixelRatio: 3,
+        quality: 1.0,
+        cacheBust: true,
+        style: {
+          transform: 'none',
+          transformOrigin: 'top left',
+        }
       });
 
-      // 3. Briefly wait to allow QR Code canvas/SVG rendering and Base64 source loads to settle in the browser DOM
-      await new Promise(resolve => setTimeout(resolve, 400));
-
-      // 4. Render high-resolution canvas using robust html2canvasWithTimeout which is 100% compatible with Tailwind CSS v4
-      const isLandscape = orientation === 'landscape';
-      const scale = 4; // 4x scale provides ultra-crisp, pixel-perfect 300+ DPI text borders and pristine HD quality
-      const canvas = await html2canvasWithTimeout(element, {
-        scale,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        logging: false,
-      }, 30000);
-
-      // 5. Generate high-quality JPEG image from the canvas
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
-
-      // Standard CR80 Size (85.6 mm x 53.98 mm) formatted to exactly 85 mm x 54 mm (8.5 cm x 5.4 cm)
-      const pdfW = isLandscape ? 85 : 54;
-      const pdfH = isLandscape ? 54 : 85;
-      
       const pdf = new jsPDF({
-        orientation: isLandscape ? 'landscape' : 'portrait',
+        orientation: pdfW > pdfH ? 'landscape' : 'portrait',
         unit: 'mm',
         format: [pdfW, pdfH],
-        compress: false // Lossless PDF configuration
+        compress: false
       });
-      
-      // Render JPEG onto PDF with lossless quality matching its signature format perfectly
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH, undefined, 'NONE');
-      
+
+      pdf.addImage(dataUrl, 'PNG', 0, 0, pdfW, pdfH, undefined, 'NONE');
+
       const blob = pdf.output('blob');
       const blobUrl = URL.createObjectURL(blob);
       const downloadLink = document.createElement('a');
@@ -24421,7 +23492,60 @@ const IDCardsModule = ({
       URL.revokeObjectURL(blobUrl);
     } catch (error: any) {
       console.error('Error generating PDF:', error);
-      alert(`Could not download PDF: ${error.message || error}. Try printing and choosing "Save as PDF" which always works perfectly!`);
+      alert(`Could not download PDF: ${error.message || error}`);
+    } finally {
+      setGenerationProgress(null);
+    }
+  };
+
+  const handleDownloadBatchPDF = async () => {
+    const isIdCard = ['student', 'teacher', 'hostel'].includes(activeTab);
+    if (!isIdCard) {
+      alert('Batch PDF generation is supported for ID Cards (Students, Staff, and Hostel Cards).');
+      return;
+    }
+
+    if (filteredPeople.length === 0) {
+      alert('No students or staff found matching the selected filter.');
+      return;
+    }
+
+    const confirmGen = window.confirm(`Generate combined vector PDF for ${filteredPeople.length} selected items?`);
+    if (!confirmGen) return;
+
+    setGenerationProgress({
+      active: true,
+      current: 0,
+      total: filteredPeople.length,
+      message: 'Initializing batch PDF engine...'
+    });
+
+    try {
+      const cardType = activeTab as 'student' | 'teacher' | 'hostel';
+      await downloadBatchIDCardsPDF(
+        filteredPeople,
+        cardType,
+        orientation,
+        {
+          name: schoolProfile.name,
+          address: schoolProfile.address,
+          contact: schoolProfile.contact,
+          logo: schoolProfile.logo,
+          principalSignature: schoolProfile.principalSignature,
+          currentSession: schoolProfile.currentSession,
+        },
+        (current, total, msg) => {
+          setGenerationProgress({
+            active: true,
+            current,
+            total,
+            message: msg
+          });
+        }
+      );
+    } catch (error: any) {
+      console.error('Batch generation error:', error);
+      alert(`Error during batch generation: ${error.message || error}`);
     } finally {
       setGenerationProgress(null);
     }
@@ -24545,6 +23669,19 @@ const IDCardsModule = ({
                     </select>
                   </div>
                 </>
+              )}
+
+              {['student', 'teacher', 'hostel'].includes(activeTab) && (
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    onClick={handleDownloadBatchPDF}
+                    className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-3 px-4 rounded-xl font-bold text-xs shadow-md hover:scale-[1.01] transition-all cursor-pointer"
+                    title="Download all filtered cards as a single multi-page PDF"
+                  >
+                    <Download size={14} />
+                    Download Filtered Batch ({filteredPeople.length})
+                  </button>
+                </div>
               )}
             </div>
           </Card>
