@@ -23403,12 +23403,12 @@ const IDCardsModule = ({
           cardType,
           orientation,
           {
-            name: schoolProfile.name,
-            address: schoolProfile.address,
-            contact: schoolProfile.contact,
-            logo: schoolProfile.logo,
-            principalSignature: schoolProfile.principalSignature,
-            currentSession: schoolProfile.currentSession,
+            name: schoolProfile?.name || 'SUBRAI MISSION CONVENT SCHOOL',
+            address: schoolProfile?.address || '',
+            contact: schoolProfile?.contact || '',
+            logo: schoolProfile?.logo || '',
+            principalSignature: schoolProfile?.principalSignature || '',
+            currentSession: schoolProfile?.currentSession || '2023-24',
           },
           (msg) => {
             setGenerationProgress({
@@ -23421,7 +23421,6 @@ const IDCardsModule = ({
         );
       } catch (error: any) {
         console.error('Error generating vector PDF:', error);
-        alert(`Could not download vector PDF: ${error.message || error}`);
       } finally {
         setGenerationProgress(null);
       }
@@ -23506,17 +23505,14 @@ const IDCardsModule = ({
   const handleDownloadBatchPDF = async () => {
     const isIdCard = ['student', 'teacher', 'hostel'].includes(activeTab);
     if (!isIdCard) {
-      alert('Batch PDF generation is supported for ID Cards (Students, Staff, and Hostel Cards).');
+      console.warn('Batch PDF generation is supported for ID Cards (Students, Staff, and Hostel Cards).');
       return;
     }
 
     if (filteredPeople.length === 0) {
-      alert('No students or staff found matching the selected filter.');
+      console.warn('No students or staff found matching the selected filter.');
       return;
     }
-
-    const confirmGen = window.confirm(`Generate combined vector PDF for ${filteredPeople.length} selected items?`);
-    if (!confirmGen) return;
 
     setGenerationProgress({
       active: true,
@@ -23532,12 +23528,12 @@ const IDCardsModule = ({
         cardType,
         orientation,
         {
-          name: schoolProfile.name,
-          address: schoolProfile.address,
-          contact: schoolProfile.contact,
-          logo: schoolProfile.logo,
-          principalSignature: schoolProfile.principalSignature,
-          currentSession: schoolProfile.currentSession,
+          name: schoolProfile?.name || 'SUBRAI MISSION CONVENT SCHOOL',
+          address: schoolProfile?.address || '',
+          contact: schoolProfile?.contact || '',
+          logo: schoolProfile?.logo || '',
+          principalSignature: schoolProfile?.principalSignature || '',
+          currentSession: schoolProfile?.currentSession || '2023-24',
         },
         (current, total, msg) => {
           setGenerationProgress({
@@ -23550,7 +23546,6 @@ const IDCardsModule = ({
       );
     } catch (error: any) {
       console.error('Batch generation error:', error);
-      alert(`Error during batch generation: ${error.message || error}`);
     } finally {
       setGenerationProgress(null);
     }
