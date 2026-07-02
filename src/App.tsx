@@ -700,7 +700,7 @@ const cleanCssGradientsAndColors = (cssText: string): string => {
     };
 
     // Regex to capture all variations of oklch(L C H / alpha) or oklch(L C H)
-    const oklchRegex = /oklch\(([^,)/]+?)[,\s]+([^,)/]+?)[,\s]+([^,)/]+?)(?:[,\s]*\/[,\s]*([^)]+?))?\)/gi;
+    const oklchRegex = /oklch\(\s*([^,\s/)]+)[,\s]+([^,\s/)]+)[,\s]+([^,\s/)]+)(?:\s*[\s/,]\s*([^)]+))?\s*\)/gi;
     let cleaned = cssText.replace(oklchRegex, (match, l, c, h, a) => {
       try {
         return convertOklchToRgb(match, l, c, h, a);
@@ -729,6 +729,8 @@ const cleanCssGradientsAndColors = (cssText: string): string => {
 };
 
 const copyComputedStylesToClone = (original: HTMLElement, clone: HTMLElement) => {
+  if (!original || !clone) return;
+  
   try {
     const computed = window.getComputedStyle(original);
     
@@ -747,36 +749,60 @@ const copyComputedStylesToClone = (original: HTMLElement, clone: HTMLElement) =>
       'borderLeftWidth', 'borderLeftStyle', 'borderLeftColor', 
       'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius',
       'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'textTransform', 'textDecoration', 'whiteSpace', 'textOverflow', 'wordBreak',
-      'opacity', 'transform', 'transformOrigin', 'boxShadow', 'overflow', 'visibility'
+      'opacity', 'transform', 'transformOrigin', 'boxShadow', 'overflow', 'visibility',
+      'objectFit', 'objectPosition', 'borderCollapse', 'verticalAlign', 'aspectRatio', 'fill', 'stroke', 'strokeWidth', 'strokeLinecap', 'strokeLinejoin'
     ];
 
-    for (const key of keys) {
-      const val = computed[key as any];
-      if (val !== undefined && val !== null && val !== '') {
-        if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
-          clone.style[key as any] = cleanCssGradientsAndColors(val);
-        } else {
-          clone.style[key as any] = val;
+    if (clone.style) {
+      for (const key of keys) {
+        try {
+          const val = computed[key as any];
+          if (val !== undefined && val !== null && val !== '') {
+            if (key === 'letterSpacing') {
+              // Prevent overlapping characters in html2canvas due to letter-spacing bug
+              clone.style.letterSpacing = 'normal';
+            } else if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
+              clone.style[key as any] = cleanCssGradientsAndColors(val);
+            } else {
+              clone.style[key as any] = val;
+            }
+          }
+        } catch (keyErr) {
+          // Safe skip for unsupported or read-only properties
         }
       }
     }
 
     // Preserve dynamic user-entered form inputs, textareas, and selects
-    if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
-      (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
-    } else if (original.tagName === 'SELECT') {
-      (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
-    }
-    
-    // Recursively copy style values for all children elements in parallel
-    const originalChildren = Array.from(original.children) as HTMLElement[];
-    const cloneChildren = Array.from(clone.children) as HTMLElement[];
-    
-    for (let i = 0; i < originalChildren.length && i < cloneChildren.length; i++) {
-      copyComputedStylesToClone(originalChildren[i], cloneChildren[i]);
+    try {
+      if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
+        (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
+      } else if (original.tagName === 'SELECT') {
+        (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
+      }
+    } catch (inputErr) {
+      // Ignore input value copying failures
     }
   } catch (e) {
-    console.error('Error in copyComputedStylesToClone:', e);
+    console.error('Error in copyComputedStylesToClone main body:', e);
+  }
+
+  // CRITICAL: Always recurse on children in a separate try-catch block 
+  // so that even if the entire style copying of the parent failed, 
+  // we still attempt to copy styles for all descendant elements!
+  try {
+    const originalChildren = Array.from(original.children);
+    const cloneChildren = Array.from(clone.children);
+    
+    for (let i = 0; i < originalChildren.length && i < cloneChildren.length; i++) {
+      const origChild = originalChildren[i] as HTMLElement;
+      const cloneChild = cloneChildren[i] as HTMLElement;
+      if (origChild && cloneChild) {
+        copyComputedStylesToClone(origChild, cloneChild);
+      }
+    }
+  } catch (recurseErr) {
+    console.error('Error in copyComputedStylesToClone children recursion:', recurseErr);
   }
 };
 
@@ -813,213 +839,205 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
   // Pre-wait for all fonts and images to be fully loaded first
   await waitForAllFontsAndImages(element);
   
-  // Inline all images inside the element to Base64 to guarantee 100% stable local rendering with zero CORS overhead
+  // Create a clean container clone
+  const clone = element.cloneNode(true) as HTMLElement;
+  
+  // Set style to be positioned absolute off-screen so user doesn't see it, but keep it in the DOM
+  clone.style.position = 'absolute';
+  clone.style.top = '0px';
+  clone.style.left = '-9999px';
+  clone.style.visibility = 'visible';
+  clone.style.display = 'block';
+  clone.style.transform = 'none'; // reset any outer CSS transforms
+  
+  // Append clone directly to the main body to ensure 100% stable DOM lookup by html2canvas
+  document.body.appendChild(clone);
+
+  // Copy computed styles recursively to the clone to freeze all classes and resolve OKLCH colors/Tailwind CSS variables
   try {
-    await inlineAllImagesInElement(element);
+    copyComputedStylesToClone(element, clone);
+  } catch (err) {
+    console.warn('Failed to copy computed styles to clone:', err);
+  }
+
+  // Inline all images in the clone to Base64 to guarantee stable local rendering with zero CORS overhead
+  try {
+    await inlineAllImagesInElement(clone);
   } catch (err) {
     console.warn('Failed to inline images in element before html2canvas:', err);
   }
 
   const finalTimeoutMs = Math.max(timeoutMs, 15000);
 
-  return new Promise((resolve, reject) => {
-    let iframe: HTMLIFrameElement | null = null;
+  // Monkeypatch addColorStop to ignore NaN or non-finite offsets (safety first!)
+  const originalAddColorStop = (CanvasGradient.prototype as any).addColorStop;
+  (CanvasGradient.prototype as any).addColorStop = function(this: any, offset: number, color: string) {
+    if (typeof offset !== 'number' || isNaN(offset) || !isFinite(offset)) {
+      offset = 0;
+    }
+    offset = Math.max(0, Math.min(1, offset));
     
-    // Define a robust cleanup function to safely remove the iframe
-    const cleanup = () => {
-      if (iframe && iframe.parentNode) {
-        try {
-          document.body.removeChild(iframe);
-        } catch (e) {}
-      }
-    };
-
-    try {
-      const width = element.offsetWidth || 325;
-      const height = element.offsetHeight || 512;
-
-      // 1. Create a hidden iframe
-      iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = width + 'px';
-      iframe.style.height = height + 'px';
-      iframe.style.border = '0';
-      iframe.style.opacity = '0';
-      iframe.style.pointerEvents = 'none';
-      iframe.style.zIndex = '-9999';
-      
-      document.body.appendChild(iframe);
-      
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!iframeDoc) {
-        cleanup();
-        throw new Error('Could not access iframe document');
-      }
-      
-      // 2. Clone the element and clean up its styles
-      const cloned = element.cloneNode(true) as HTMLElement;
-      
-      // Copy computed styles from original element to clone to preserve all resolved oklch colors & custom styling
-      copyComputedStylesToClone(element, cloned);
-
-      // Force-override layout styles on the cloned root element to guarantee it aligns exactly at (0, 0) inside the iframe body
-      cloned.style.setProperty('position', 'relative', 'important');
-      cloned.style.setProperty('top', '0', 'important');
-      cloned.style.setProperty('left', '0', 'important');
-      cloned.style.setProperty('margin', '0', 'important');
-      cloned.style.setProperty('transform', 'none', 'important');
-      cloned.style.setProperty('display', 'block', 'important');
-      cloned.style.setProperty('visibility', 'visible', 'important');
-      cloned.style.setProperty('opacity', '1', 'important');
-      
-      // 3. Write basic HTML structure to iframe with base URL to resolve relative images/stylesheets
-      iframeDoc.open();
-      iframeDoc.write(`<!DOCTYPE html><html><head><base href="${window.location.origin}/"><title>Print Isolation</title></head><body></body></html>`);
-      iframeDoc.close();
-      
-      // Style the iframe body to have absolute zero spacing and hide overflow
-      if (iframeDoc.body) {
-        iframeDoc.body.style.margin = '0';
-        iframeDoc.body.style.padding = '0';
-        iframeDoc.body.style.overflow = 'hidden';
-        iframeDoc.body.style.backgroundColor = '#ffffff';
-      }
-
-      // Override styleSheets property on the iframe's document object.
-      // This prevents html2canvas from scanning and parsing the stylesheets (which contain modern, unsupported oklch color values and other custom syntax that crashes the html2canvas parser).
-      // Since we recursively inlined computed styles and browser resolves oklch to standard rgb, html2canvas renders perfectly and is much faster.
+    let cleanedColor = color;
+    if (typeof color === 'string') {
       try {
-        Object.defineProperty(iframeDoc, 'styleSheets', {
-          get() {
-            return [];
-          },
-          configurable: true
-        });
-      } catch (e) {
-        console.warn('Failed to override iframe styleSheets:', e);
+        cleanedColor = cleanCssGradientsAndColors(color);
+      } catch (err) {
+        cleanedColor = color;
+      }
+    }
+    
+    try {
+      originalAddColorStop.call(this, offset, cleanedColor);
+    } catch (err) {
+      console.warn('Failed to add color stop:', offset, cleanedColor, err);
+      try {
+        originalAddColorStop.call(this, offset, '#0047AB');
+      } catch (_) {}
+    }
+  };
+
+  // Temporarily stub document.styleSheets to return [] to prevent html2canvas
+  // from scanning and parsing stylesheets that contain OKLCH or css variables which cause crashing.
+  let styleSheetsOverridden = false;
+  try {
+    Object.defineProperty(document, 'styleSheets', {
+      get() {
+        return [];
+      },
+      configurable: true
+    });
+    styleSheetsOverridden = true;
+  } catch (e) {
+    console.warn('Failed to override document.styleSheets:', e);
+  }
+
+  // CRITICAL SAFETYSUB: Override window.getComputedStyle to intercept oklch, oklab, and color-mix
+  // returned natively by the browser for Tailwind CSS v4 variables, completely preventing html2canvas from crashing!
+  const originalGetComputedStyle = window.getComputedStyle;
+  let getComputedStyleOverridden = false;
+  try {
+    window.getComputedStyle = function(elt, pseudoElt) {
+      let style: CSSStyleDeclaration;
+      try {
+        const win = (elt && elt.ownerDocument && elt.ownerDocument.defaultView) || window;
+        if (win !== window) {
+          style = win.getComputedStyle(elt, pseudoElt);
+        } else {
+          style = originalGetComputedStyle(elt, pseudoElt);
+        }
+      } catch (err) {
+        try {
+          style = originalGetComputedStyle(elt, pseudoElt);
+        } catch (_) {
+          return {} as CSSStyleDeclaration;
+        }
       }
 
-      // 4. Copy stylesheets to iframe (Only font-related link elements to avoid large local stylesheets containing oklch)
-      const head = iframeDoc.head;
-      
-      Array.from(document.querySelectorAll('link[rel="stylesheet"]')).forEach(link => {
-        try {
-          const href = link.getAttribute('href') || '';
-          if (href.includes('fonts.googleapis.com') || href.includes('fonts.gstatic.com') || href.includes('font-awesome')) {
-            const linkClone = link.cloneNode(true) as HTMLLinkElement;
-            head.appendChild(linkClone);
+      return new Proxy(style, {
+        get(target, prop) {
+          if (prop === 'getPropertyValue') {
+            return function(propertyName: string) {
+              try {
+                const val = target.getPropertyValue(propertyName);
+                if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
+                  return cleanCssGradientsAndColors(val);
+                }
+                return val;
+              } catch (e) {
+                return '';
+              }
+            };
           }
-        } catch (e) {
-          // Ignore
+          try {
+            const val = Reflect.get(target, prop);
+            if (typeof val === 'function') {
+              return val.bind(target);
+            }
+            if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
+              return cleanCssGradientsAndColors(val);
+            }
+            return val;
+          } catch (e) {
+            return '';
+          }
         }
       });
-      
-      // 5. Append cloned element to iframe body
-      iframeDoc.body.appendChild(cloned);
-      
-      const originalOnClone = options.onclone;
-      const enhancedOptions = {
-        ...options,
-        document: iframeDoc,
-        window: iframe.contentWindow || window,
-        scale: options.scale || Math.max(window.devicePixelRatio || 1, 4),
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: '#ffffff',
-        logging: false,
-        foreignObjectRendering: false, // Set to false to avoid SVG sandbox issues that yield blank renders
-        imageTimeout: 30000,
-        removeContainer: true,
-        scrollX: 0,
-        scrollY: 0,
-        width: width,
-        height: height,
-        windowWidth: width,
-        windowHeight: height,
-        onclone: (clonedDoc: Document, clonedEl: HTMLElement) => {
-          // Call original onclone if any
-          if (originalOnClone) {
-            try {
-              originalOnClone(clonedDoc, clonedEl);
-            } catch (e) {
-              console.error('Error in original onclone:', e);
-            }
-          }
-        }
-      };
+    };
+    getComputedStyleOverridden = true;
+  } catch (e) {
+    console.warn('Failed to override window.getComputedStyle:', e);
+  }
 
-      // 6. Wait for styles/images to settle, then run html2canvas inside the iframe context
-      const renderTimeout = setTimeout(async () => {
-        // Temporarily monkey patch CanvasGradient.prototype.addColorStop to completely avoid non-finite gradient stop issues
-        const originalAddColorStop = (CanvasGradient.prototype as any).addColorStop;
-        (CanvasGradient.prototype as any).addColorStop = function(this: any, offset: number, color: string) {
-          if (typeof offset !== 'number' || isNaN(offset) || !isFinite(offset)) {
-            console.warn('Prevented non-finite addColorStop offset:', offset);
-            offset = 0;
-          }
-          offset = Math.max(0, Math.min(1, offset));
-          
-          let cleanedColor = color;
-          if (typeof color === 'string') {
-            try {
-              cleanedColor = cleanCssGradientsAndColors(color);
-            } catch (err) {
-              cleanedColor = color;
-            }
-          }
-          
-          try {
-            originalAddColorStop.call(this, offset, cleanedColor);
-          } catch (err) {
-            console.warn('Failed to add color stop:', offset, cleanedColor, err);
-            try {
-              originalAddColorStop.call(this, offset, '#0047AB');
-            } catch (_) {}
-          }
-        };
+  try {
+    const width = element.offsetWidth || 325;
+    const height = element.offsetHeight || 512;
 
-        try {
-          // Wait for images inside iframe to be complete
-          const images = Array.from(cloned.getElementsByTagName('img'));
-          await Promise.all(images.map(img => {
-            if (img.complete) return Promise.resolve();
-            return new Promise<void>(res => {
-              img.onload = () => res();
-              img.onerror = () => res();
-            });
-          }));
+    const enhancedOptions = {
+      ...options,
+      scale: options.scale || Math.max(window.devicePixelRatio || 1, 4),
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      logging: false,
+      foreignObjectRendering: false, // Prevents SVG rendering failures
+      imageTimeout: 30000,
+      removeContainer: true,
+      scrollX: 0,
+      scrollY: 0,
+      width: width,
+      height: height,
+      windowWidth: width,
+      windowHeight: height,
+    };
 
-          let canvas;
-          try {
-            canvas = await html2canvas(cloned, enhancedOptions);
-          } finally {
-            cleanup();
-            // Restore the original addColorStop
-            (CanvasGradient.prototype as any).addColorStop = originalAddColorStop;
-          }
-          resolve(canvas);
-        } catch (err) {
-          cleanup();
-          // Restore the original addColorStop
-          (CanvasGradient.prototype as any).addColorStop = originalAddColorStop;
-          reject(err);
-        }
-      }, 150);
+    const canvas = await Promise.race([
+      html2canvas(clone, enhancedOptions),
+      new Promise<HTMLCanvasElement>((_, reject) => 
+        setTimeout(() => reject(new Error('html2canvas rendering timed out')), finalTimeoutMs)
+      )
+    ]);
 
-      // Overall safety timeout
-      setTimeout(() => {
-        clearTimeout(renderTimeout);
-        cleanup();
-        reject(new Error('html2canvas timed out'));
-      }, finalTimeoutMs);
-
-    } catch (err) {
-      cleanup();
-      reject(err);
+    return canvas;
+  } finally {
+    // Remove the temporary clone from DOM
+    try {
+      if (clone && clone.parentNode) {
+        clone.parentNode.removeChild(clone);
+      }
+    } catch (cleanErr) {
+      console.warn('Failed to remove cloned element:', cleanErr);
     }
-  });
+
+    // Restore original getComputedStyle
+    if (getComputedStyleOverridden) {
+      try {
+        window.getComputedStyle = originalGetComputedStyle;
+      } catch (e) {
+        console.warn('Failed to restore window.getComputedStyle:', e);
+      }
+    }
+
+    // Restore original addColorStop
+    (CanvasGradient.prototype as any).addColorStop = originalAddColorStop;
+
+    // Restore original styleSheets descriptor
+    if (styleSheetsOverridden) {
+      try {
+        delete (document as any).styleSheets;
+      } catch (e) {
+        console.warn('Failed to delete document.styleSheets:', e);
+      }
+      try {
+        // Redefine original descriptor to guarantee restoration of original style sheets
+        const protoDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'styleSheets');
+        if (protoDesc) {
+          Object.defineProperty(document, 'styleSheets', protoDesc);
+        }
+      } catch (redefineErr) {
+        console.warn('Failed to redefine document.styleSheets:', redefineErr);
+      }
+    }
+  }
 };
 
 const extractIdFromQR = (text: string, paramName: string = 'id') => {
@@ -24234,19 +24252,18 @@ const IDCardsModule = ({
       // 3. Briefly wait to allow QR Code canvas/SVG rendering and Base64 source loads to settle in the browser DOM
       await new Promise(resolve => setTimeout(resolve, 400));
 
-      // 4. Render high-resolution JPEG image using robust toJpeg from html-to-image (100% compatible with Tailwind CSS v4)
+      // 4. Render high-resolution canvas using robust html2canvasWithTimeout which is 100% compatible with Tailwind CSS v4
       const isLandscape = orientation === 'landscape';
-      const imgData = await toJpeg(element, {
-        quality: 0.98,
-        pixelRatio: 3, // 3x scale provides crisp, pixel-perfect text borders and high-quality graphics
+      const scale = 3; // 3x scale provides crisp, pixel-perfect text borders and highly optimized file size
+      const canvas = await html2canvasWithTimeout(element, {
+        scale,
         backgroundColor: '#ffffff',
-        style: {
-          transform: 'none',
-          margin: '0',
-          padding: '0',
-        },
-        cacheBust: true,
-      });
+        useCORS: true,
+        logging: false,
+      }, 30000);
+
+      // 5. Generate high-quality JPEG image from the canvas
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
 
       // Standard CR80 Size (85.6 mm x 53.98 mm) formatted to exactly 85 mm x 54 mm (8.5 cm x 5.4 cm)
       const pdfW = isLandscape ? 85 : 54;
