@@ -728,81 +728,89 @@ const cleanCssGradientsAndColors = (cssText: string): string => {
   }
 };
 
-const copyComputedStylesToClone = (original: HTMLElement, clone: HTMLElement) => {
+const resolveUnsupportedStylesForHtml2Canvas = (original: HTMLElement, clone: HTMLElement) => {
   if (!original || !clone) return;
   
   try {
     const computed = window.getComputedStyle(original);
     
-    // Copy all layout, spacing, sizing, typography, and visual properties
-    const keys = [
-      'display', 'position', 'top', 'right', 'bottom', 'left', 'zIndex',
-      'flexDirection', 'flexWrap', 'flexGrow', 'flexShrink', 'flexBasis', 'alignItems', 'alignSelf', 'justifyContent', 'gap',
-      'gridTemplateColumns', 'gridTemplateRows', 'gridColumn', 'gridRow', 'gridArea', 'gridGap',
-      'width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight', 'boxSizing',
-      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-      'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
-      'backgroundColor', 'color', 'backgroundImage', 'backgroundSize', 'backgroundPosition', 'backgroundRepeat',
-      'borderTopWidth', 'borderTopStyle', 'borderTopColor', 
-      'borderRightWidth', 'borderRightStyle', 'borderRightColor', 
-      'borderBottomWidth', 'borderBottomStyle', 'borderBottomColor', 
-      'borderLeftWidth', 'borderLeftStyle', 'borderLeftColor', 
-      'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomLeftRadius', 'borderBottomRightRadius',
-      'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'textTransform', 'textDecoration', 'whiteSpace', 'textOverflow', 'wordBreak',
-      'opacity', 'transform', 'transformOrigin', 'boxShadow', 'overflow', 'visibility',
-      'objectFit', 'objectPosition', 'borderCollapse', 'verticalAlign', 'aspectRatio', 'fill', 'stroke', 'strokeWidth', 'strokeLinecap', 'strokeLinejoin'
+    // We only resolve styles that html2canvas struggles to parse
+    // especially modern CSS colors, gradients, shadows, and variables
+    const propsToProcess = [
+      'backgroundColor',
+      'color',
+      'borderColor',
+      'borderTopColor',
+      'borderRightColor',
+      'borderBottomColor',
+      'borderLeftColor',
+      'backgroundImage',
+      'fill',
+      'stroke',
+      'boxShadow',
+      'textShadow',
+      'outlineColor',
+      'textDecorationColor'
     ];
 
     if (clone.style) {
-      for (const key of keys) {
+      for (const prop of propsToProcess) {
         try {
-          const val = computed[key as any];
-          if (val !== undefined && val !== null && val !== '') {
-            if (key === 'letterSpacing') {
-              // Prevent overlapping characters in html2canvas due to letter-spacing bug
-              clone.style.letterSpacing = 'normal';
-            } else if (typeof val === 'string' && (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix'))) {
-              clone.style[key as any] = cleanCssGradientsAndColors(val);
+          const val = computed[prop as any];
+          if (val && typeof val === 'string') {
+            if (val.includes('oklch') || val.includes('oklab') || val.includes('color-mix') || val.includes('var(') || prop === 'backgroundImage') {
+              const cleaned = cleanCssGradientsAndColors(val);
+              if (cleaned && cleaned !== 'none') {
+                clone.style[prop as any] = cleaned;
+              }
             } else {
-              clone.style[key as any] = val;
+              // Always resolve computed values to absolute values (rgb/rgba/px) to avoid variable resolution issues
+              clone.style[prop as any] = val;
             }
           }
-        } catch (keyErr) {
-          // Safe skip for unsupported or read-only properties
-        }
+        } catch (_) {}
       }
+      
+      // Freeze typography styles with absolute computed values to prevent font or inheritance shift
+      try {
+        clone.style.fontFamily = computed.fontFamily;
+        clone.style.fontSize = computed.fontSize;
+        clone.style.fontWeight = computed.fontWeight;
+        clone.style.lineHeight = computed.lineHeight;
+      } catch (_) {}
+
+      // Freeze letter-spacing to normal to prevent html2canvas character overlapping bugs
+      try {
+        const ls = computed.letterSpacing;
+        if (ls && ls !== 'normal') {
+          clone.style.letterSpacing = 'normal';
+        }
+      } catch (_) {}
     }
 
     // Preserve dynamic user-entered form inputs, textareas, and selects
-    try {
-      if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
-        (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
-      } else if (original.tagName === 'SELECT') {
-        (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
-      }
-    } catch (inputErr) {
-      // Ignore input value copying failures
+    if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
+      (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
+    } else if (original.tagName === 'SELECT') {
+      (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
     }
-  } catch (e) {
-    console.error('Error in copyComputedStylesToClone main body:', e);
+  } catch (err) {
+    console.error('Error in resolveUnsupportedStylesForHtml2Canvas:', err);
   }
 
-  // CRITICAL: Always recurse on children in a separate try-catch block 
-  // so that even if the entire style copying of the parent failed, 
-  // we still attempt to copy styles for all descendant elements!
+  // Recurse down children in a separate block for absolute robustness
   try {
     const originalChildren = Array.from(original.children);
     const cloneChildren = Array.from(clone.children);
-    
     for (let i = 0; i < originalChildren.length && i < cloneChildren.length; i++) {
       const origChild = originalChildren[i] as HTMLElement;
       const cloneChild = cloneChildren[i] as HTMLElement;
       if (origChild && cloneChild) {
-        copyComputedStylesToClone(origChild, cloneChild);
+        resolveUnsupportedStylesForHtml2Canvas(origChild, cloneChild);
       }
     }
   } catch (recurseErr) {
-    console.error('Error in copyComputedStylesToClone children recursion:', recurseErr);
+    console.error('Error in resolveUnsupportedStylesForHtml2Canvas children recursion:', recurseErr);
   }
 };
 
@@ -835,24 +843,6 @@ const waitForAllFontsAndImages = async (element: HTMLElement): Promise<void> => 
   }
 };
 
-const copyInputValuesToClone = (original: HTMLElement, clone: HTMLElement) => {
-  try {
-    if (original.tagName === 'INPUT' || original.tagName === 'TEXTAREA') {
-      (clone as HTMLInputElement).value = (original as HTMLInputElement).value;
-    } else if (original.tagName === 'SELECT') {
-      (clone as HTMLSelectElement).value = (original as HTMLSelectElement).value;
-    }
-  } catch (err) {}
-  
-  try {
-    const origChildren = Array.from(original.children);
-    const cloneChildren = Array.from(clone.children);
-    for (let i = 0; i < origChildren.length && i < cloneChildren.length; i++) {
-      copyInputValuesToClone(origChildren[i] as HTMLElement, cloneChildren[i] as HTMLElement);
-    }
-  } catch (err) {}
-};
-
 const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, timeoutMs = 15000): Promise<HTMLCanvasElement> => {
   // Pre-wait for all fonts and images to be fully loaded first
   await waitForAllFontsAndImages(element);
@@ -860,30 +850,41 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
   // Create a clean container clone
   const clone = element.cloneNode(true) as HTMLElement;
   
-  // Set style to be positioned absolute off-screen so user doesn't see it, but keep it in the DOM
-  clone.style.position = 'absolute';
+  // Create an invisible wrapper container as a sibling of the original element to inherit all context/variables
+  const parent = element.parentNode || document.body;
+  const wrapper = document.createElement('div');
+  wrapper.style.width = '0px';
+  wrapper.style.height = '0px';
+  wrapper.style.overflow = 'hidden';
+  wrapper.style.position = 'absolute';
+  wrapper.style.top = '-9999px';
+  wrapper.style.left = '-9999px';
+  wrapper.style.pointerEvents = 'none';
+  wrapper.style.visibility = 'visible';
+  wrapper.style.display = 'block';
+
+  // Set style to be positioned relative so it flows naturally in its container context
+  clone.style.position = 'relative';
   clone.style.top = '0px';
-  clone.style.left = '-9999px';
+  clone.style.left = '0px';
   clone.style.visibility = 'visible';
   clone.style.display = 'block';
   clone.style.transform = 'none'; // reset any outer CSS transforms
   
-  // Append clone directly to the main body to ensure 100% stable DOM lookup by html2canvas
-  document.body.appendChild(clone);
+  // Lock outer sizes exactly to match the on-screen rendering pixel-by-pixel
+  const width = element.offsetWidth || 325;
+  const height = element.offsetHeight || 512;
+  clone.style.width = `${width}px`;
+  clone.style.height = `${height}px`;
 
-  // Copy input values from original on-screen element to the clone
-  try {
-    copyInputValuesToClone(element, clone);
-  } catch (err) {
-    console.warn('Failed to copy input values to clone:', err);
-  }
+  wrapper.appendChild(clone);
+  parent.appendChild(wrapper);
 
-  // Copy computed styles recursively from the clone to itself to freeze all classes and resolve OKLCH colors/Tailwind CSS variables
-  // using its natural, off-screen unsquished layout!
+  // Copy input values and recursively resolve modern OKLCH colors, gradients, and CSS variables on the clone using their clean, computed RGB values
   try {
-    copyComputedStylesToClone(clone, clone);
+    resolveUnsupportedStylesForHtml2Canvas(element, clone);
   } catch (err) {
-    console.warn('Failed to copy computed styles to clone:', err);
+    console.warn('Failed to resolve unsupported styles for clone:', err);
   }
 
   // Inline all images in the clone to Base64 to guarantee stable local rendering with zero CORS overhead
@@ -995,9 +996,6 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
   }
 
   try {
-    const width = element.offsetWidth || 325;
-    const height = element.offsetHeight || 512;
-
     const enhancedOptions = {
       ...options,
       scale: options.scale || Math.max(window.devicePixelRatio || 1, 4),
@@ -1025,13 +1023,13 @@ const html2canvasWithTimeout = async (element: HTMLElement, options: any = {}, t
 
     return canvas;
   } finally {
-    // Remove the temporary clone from DOM
+    // Remove the temporary wrapper and clone from DOM
     try {
-      if (clone && clone.parentNode) {
-        clone.parentNode.removeChild(clone);
+      if (wrapper && wrapper.parentNode) {
+        wrapper.parentNode.removeChild(wrapper);
       }
     } catch (cleanErr) {
-      console.warn('Failed to remove cloned element:', cleanErr);
+      console.warn('Failed to remove temporary wrapper:', cleanErr);
     }
 
     // Restore original getComputedStyle
@@ -24387,7 +24385,7 @@ const IDCardsModule = ({
 
       // 4. Render high-resolution canvas using robust html2canvasWithTimeout which is 100% compatible with Tailwind CSS v4
       const isLandscape = orientation === 'landscape';
-      const scale = 3; // 3x scale provides crisp, pixel-perfect text borders and highly optimized file size
+      const scale = 4; // 4x scale provides ultra-crisp, pixel-perfect 300+ DPI text borders and pristine HD quality
       const canvas = await html2canvasWithTimeout(element, {
         scale,
         backgroundColor: '#ffffff',
