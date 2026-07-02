@@ -22588,6 +22588,11 @@ const IDCardsModule = ({
 
     const schoolName = schoolProfile?.name || 'SUBRAI MISSION CONVENT SCHOOL';
     const schoolContact = schoolProfile?.contact || '';
+    const cleanSchoolAddress = (schoolProfile?.address || '')
+      .replace(/[\r\n]+/g, ', ')
+      .replace(/,\s*,/g, ',')
+      .replace(/\s+/g, ' ')
+      .trim();
     
     const idValue = `${window.location.origin}?id=${person.staffId || person.studentId || person.id || 'N/A'}`;
 
@@ -22645,7 +22650,7 @@ const IDCardsModule = ({
                  )}
                  <div className="text-center">
                     <h2 className="text-amber-300 font-extrabold text-[12.5px] uppercase tracking-wider leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">{schoolName}</h2>
-                    <p className="text-[6.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[210px]">{schoolProfile?.address?.substring(0, 80)}</p>
+                    <p className="text-[6.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[210px]">{cleanSchoolAddress.substring(0, 80)}</p>
                     {schoolContact && (
                        <p className="text-[6px] text-white font-black uppercase tracking-[0.1em] bg-black/20 px-1.5 py-0.5 rounded-full inline-block mt-0.5 leading-none">
                          PH: {schoolContact}
@@ -22677,7 +22682,7 @@ const IDCardsModule = ({
                  )}
                  <div className="text-left">
                     <h2 className="text-amber-300 font-extrabold text-[14px] uppercase tracking-wider leading-tight drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] truncate max-w-[280px]">{schoolName}</h2>
-                    <p className="text-[7.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[280px]">{schoolProfile?.address?.substring(0, 100)}</p>
+                    <p className="text-[7.5px] text-white/95 font-bold uppercase tracking-normal mt-0.5 leading-tight truncate max-w-[280px]">{cleanSchoolAddress.substring(0, 100)}</p>
                     {schoolContact && (
                        <p className="text-[6.5px] text-white font-black uppercase tracking-[0.1em] bg-black/20 px-1.5 py-0.5 rounded-full inline-block mt-0.5 leading-none">
                          PH: {schoolContact}

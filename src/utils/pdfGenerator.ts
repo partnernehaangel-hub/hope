@@ -248,13 +248,24 @@ export const drawIDCardToPDF = async (
 
   // School Name and Contact
   const schoolName = (schoolProfile.name || 'SUBRAI MISSION CONVENT SCHOOL').toUpperCase();
-  const schoolAddress = (schoolProfile.address || '').substring(0, 75);
+  const schoolAddress = (schoolProfile.address || '')
+    .replace(/[\r\n]+/g, ', ')
+    .replace(/,\s*,/g, ',')
+    .replace(/\s+/g, ' ')
+    .trim();
   const schoolContact = schoolProfile.contact || '';
 
   const textStartX = logoX + logoSize + 6;
+  const maxHeaderWidth = pageW - textStartX - 8;
 
-  // Draw School Name
-  const schoolNameFontSize = isLandscape ? 7.5 : 6.5;
+  // Draw School Name (with dynamic font sizing to prevent overflow)
+  let schoolNameFontSize = isLandscape ? 7.5 : 6.5;
+  let nameWidth = fontBold.widthOfTextAtSize(schoolName, schoolNameFontSize);
+  while (nameWidth > maxHeaderWidth && schoolNameFontSize > 4.5) {
+    schoolNameFontSize -= 0.1;
+    nameWidth = fontBold.widthOfTextAtSize(schoolName, schoolNameFontSize);
+  }
+
   page.drawText(schoolName, {
     x: textStartX,
     y: pageH - 14,
@@ -263,11 +274,18 @@ export const drawIDCardToPDF = async (
     color: secondaryColor,
   });
 
-  // Draw Address
+  // Draw Address (with dynamic font sizing to prevent overflow and keep on one line)
+  let addrFontSize = isLandscape ? 4.5 : 4.0;
+  let addrWidth = fontRegular.widthOfTextAtSize(schoolAddress, addrFontSize);
+  while (addrWidth > maxHeaderWidth && addrFontSize > 2.5) {
+    addrFontSize -= 0.1;
+    addrWidth = fontRegular.widthOfTextAtSize(schoolAddress, addrFontSize);
+  }
+
   page.drawText(schoolAddress, {
     x: textStartX,
     y: pageH - 21,
-    size: isLandscape ? 4.5 : 4.0,
+    size: addrFontSize,
     font: fontRegular,
     color: whiteColor,
   });
