@@ -2834,6 +2834,90 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     section: ''
   });
 
+  const [attendanceViewMode, setAttendanceViewMode] = useState<'date' | 'month' | 'year'>('date');
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<number>(new Date().getMonth() + 1);
+  const [selectedYearFilter, setSelectedYearFilter] = useState<number>(new Date().getFullYear());
+
+  const parseAttendanceDate = (dateStr: string | Date): { year: number, month: number, day: number } | null => {
+    if (!dateStr) return null;
+    if (dateStr instanceof Date) {
+      return {
+        year: dateStr.getFullYear(),
+        month: dateStr.getMonth() + 1,
+        day: dateStr.getDate()
+      };
+    }
+    
+    // YYYY-MM-DD
+    if (typeof dateStr === 'string' && dateStr.includes('-')) {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const day = parseInt(parts[2], 10);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+          return { year, month, day };
+        }
+      }
+    }
+    
+    // DD/MM/YYYY
+    if (typeof dateStr === 'string' && dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+          return { year, month, day };
+        }
+      }
+    }
+    
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return {
+        year: d.getFullYear(),
+        month: d.getMonth() + 1,
+        day: d.getDate()
+      };
+    }
+    
+    return null;
+  };
+
+  const uniqueYears = React.useMemo(() => {
+    const yearsSet = new Set<number>();
+    yearsSet.add(new Date().getFullYear());
+    yearsSet.add(2024);
+    yearsSet.add(2025);
+    yearsSet.add(2026);
+    yearsSet.add(2027);
+    yearsSet.add(2028);
+    attendance.forEach((a: any) => {
+      const parsed = parseAttendanceDate(a.date);
+      if (parsed) {
+        yearsSet.add(parsed.year);
+      }
+    });
+    return Array.from(yearsSet).sort((a, b) => b - a);
+  }, [attendance]);
+
+  const monthsList = [
+    { value: 1, label: 'January' },
+    { value: 2, label: 'February' },
+    { value: 3, label: 'March' },
+    { value: 4, label: 'April' },
+    { value: 5, label: 'May' },
+    { value: 6, label: 'June' },
+    { value: 7, label: 'July' },
+    { value: 8, label: 'August' },
+    { value: 9, label: 'September' },
+    { value: 10, label: 'October' },
+    { value: 11, label: 'November' },
+    { value: 12, label: 'December' },
+  ];
+
   const [scanFilters, setScanFilters] = useState({
     class: '',
     section: ''
@@ -3662,20 +3746,102 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
         )}
 
         {(activeTab === 'history' || activeTab === 'my-attendance') && (
-          <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            {/* View Mode Toggle Buttons */}
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit border border-slate-200 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setAttendanceViewMode('date')}
+                  className={`px-4 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    attendanceViewMode === 'date' ? 'bg-white text-primary shadow-sm' : 'text-text-sub hover:text-primary'
+                  }`}
+                >
+                  <span>📅</span> Daily View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceViewMode('month')}
+                  className={`px-4 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    attendanceViewMode === 'month' ? 'bg-white text-primary shadow-sm' : 'text-text-sub hover:text-primary'
+                  }`}
+                >
+                  <span>📊</span> Monthly View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceViewMode('year')}
+                  className={`px-4 py-2.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    attendanceViewMode === 'year' ? 'bg-white text-primary shadow-sm' : 'text-text-sub hover:text-primary'
+                  }`}
+                >
+                  <span>📈</span> Yearly View
+                </button>
+              </div>
+
+              {/* Status color legends */}
+              <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold">
+                <span className="px-2.5 py-1.5 bg-green-50 text-green-700 rounded-lg flex items-center gap-1 border border-green-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Present (P)
+                </span>
+                <span className="px-2.5 py-1.5 bg-red-50 text-red-700 rounded-lg flex items-center gap-1 border border-red-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Absent (A)
+                </span>
+                <span className="px-2.5 py-1.5 bg-amber-50 text-amber-700 rounded-lg flex items-center gap-1 border border-amber-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Late (L)
+                </span>
+                <span className="px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg flex items-center gap-1 border border-blue-100">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Leave (LV)
+                </span>
+              </div>
+            </div>
+
             <Card>
+              {/* Conditional Filters depending on view mode */}
               {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-8 pb-6 border-b border-slate-100">
                   <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
-                      <Calendar size={16} className="text-text-secondary" />
-                      <input 
-                        type="date" 
-                        className="bg-transparent outline-none text-sm font-medium"
-                        value={historyFilters.date}
-                        onChange={(e) => setHistoryFilters({...historyFilters, date: e.target.value})}
-                      />
-                    </div>
+                    {/* Only show single date picker in daily view */}
+                    {attendanceViewMode === 'date' && (
+                      <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+                        <Calendar size={16} className="text-text-secondary" />
+                        <input 
+                          type="date" 
+                          className="bg-transparent outline-none text-sm font-medium"
+                          value={historyFilters.date}
+                          onChange={(e) => setHistoryFilters({...historyFilters, date: e.target.value})}
+                        />
+                      </div>
+                    )}
+
+                    {/* Show Month filter in monthly view */}
+                    {attendanceViewMode === 'month' && (
+                      <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+                        <span className="text-xs font-bold text-text-sub uppercase tracking-wider">Month</span>
+                        <select 
+                          className="bg-transparent outline-none text-sm font-medium"
+                          value={selectedMonthFilter}
+                          onChange={(e) => setSelectedMonthFilter(parseInt(e.target.value, 10))}
+                        >
+                          {monthsList.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Show Year filter in monthly/yearly views */}
+                    {(attendanceViewMode === 'month' || attendanceViewMode === 'year') && (
+                      <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+                        <span className="text-xs font-bold text-text-sub uppercase tracking-wider">Year</span>
+                        <select 
+                          className="bg-transparent outline-none text-sm font-medium"
+                          value={selectedYearFilter}
+                          onChange={(e) => setSelectedYearFilter(parseInt(e.target.value, 10))}
+                        >
+                          {uniqueYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                    )}
+
                     <select 
                       className="bg-slate-100 px-3 py-2 rounded-xl border border-slate-200 outline-none text-sm font-medium"
                       value={historyFilters.class}
@@ -3696,103 +3862,682 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                 </div>
               )}
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
-                      {isManagementRole && activeTab !== 'my-attendance' && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Student</th>}
-                      {activeTab === 'my-attendance' && isEmployee && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Employee</th>}
-                      <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">{activeTab === 'my-attendance' ? 'Role' : 'Class'}</th>
-                      <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
-                      <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Time</th>
-                      {isManagementRole && activeTab !== 'my-attendance' && (
-                        <>
-                          <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">IP Address</th>
-                          <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Location</th>
-                        </>
-                      )}
-                      {isManagementRole && activeTab !== 'my-attendance' && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {(isManagementRole && activeTab !== 'my-attendance' ? filteredHistory : myAttendance).length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="py-12 text-center text-text-sub italic">No attendance records found.</td>
+              {/* If activeTab is 'my-attendance', we also let students/parents filter by month/year */}
+              {activeTab === 'my-attendance' && (
+                <div className="flex flex-wrap items-center gap-4 mb-8 pb-6 border-b border-slate-100">
+                  {attendanceViewMode === 'date' && (
+                    <p className="text-sm text-text-sub italic">Showing list of all recorded attendance logs.</p>
+                  )}
+                  {attendanceViewMode === 'month' && (
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+                        <span className="text-xs font-bold text-text-sub uppercase tracking-wider">Month</span>
+                        <select 
+                          className="bg-transparent outline-none text-sm font-medium"
+                          value={selectedMonthFilter}
+                          onChange={(e) => setSelectedMonthFilter(parseInt(e.target.value, 10))}
+                        >
+                          {monthsList.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+                        <span className="text-xs font-bold text-text-sub uppercase tracking-wider">Year</span>
+                        <select 
+                          className="bg-transparent outline-none text-sm font-medium"
+                          value={selectedYearFilter}
+                          onChange={(e) => setSelectedYearFilter(parseInt(e.target.value, 10))}
+                        >
+                          {uniqueYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                  {attendanceViewMode === 'year' && (
+                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-xl border border-slate-200">
+                      <span className="text-xs font-bold text-text-sub uppercase tracking-wider">Year</span>
+                      <select 
+                        className="bg-transparent outline-none text-sm font-medium"
+                        value={selectedYearFilter}
+                        onChange={(e) => setSelectedYearFilter(parseInt(e.target.value, 10))}
+                      >
+                        {uniqueYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* VIEW MODE 1: DAILY VIEW */}
+              {attendanceViewMode === 'date' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200">
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
+                        {isManagementRole && activeTab !== 'my-attendance' && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Student</th>}
+                        {activeTab === 'my-attendance' && isEmployee && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Employee</th>}
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">{activeTab === 'my-attendance' ? 'Role' : 'Class'}</th>
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
+                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Time</th>
+                        {isManagementRole && activeTab !== 'my-attendance' && (
+                          <>
+                            <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">IP Address</th>
+                            <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Location</th>
+                          </>
+                        )}
+                        {isManagementRole && activeTab !== 'my-attendance' && <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Actions</th>}
                       </tr>
-                    ) : (
-                      (isManagementRole && activeTab !== 'my-attendance' ? filteredHistory : myAttendance).map((a: any) => (
-                        <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="py-4 text-sm font-medium text-text-sub">
-                            {formatDate(a.date)}
-                            <span className="ml-2 text-[10px] font-bold text-primary/60 uppercase">({a.period || 'Morning'})</span>
-                          </td>
-                          {isManagementRole && activeTab !== 'my-attendance' && (
-                            <td className="py-4">
-                              <p className="text-sm font-bold text-text-heading">{a.studentName}</p>
-                              <p className="text-[10px] text-text-sub uppercase">{a.studentId}</p>
-                            </td>
-                          )}
-                          {activeTab === 'my-attendance' && isEmployee && (
-                            <td className="py-4">
-                              <p className="text-sm font-bold text-text-heading">{a.staffName}</p>
-                              <p className="text-[10px] text-text-sub uppercase">{a.staffId} ({a.role})</p>
-                            </td>
-                          )}
-                          <td className="py-4 text-sm font-medium text-text-sub">
-                            {activeTab === 'my-attendance' ? (a.role || 'Staff') : `${a.class} - ${a.section}`}
-                          </td>
-                          <td className="py-4">
-                            <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
-                              a.status === 'Present' ? 'bg-green-100 text-green-700' : 
-                              a.status === 'Absent' ? 'bg-red-100 text-red-700' : 
-                              a.status === 'Late' ? 'bg-amber-100 text-amber-700' : 
-                              a.status === 'Leave' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'
-                            }`}>
-                              {a.status}
-                            </span>
-                          </td>
-                          <td className="py-4 text-sm font-medium text-text-sub">{a.time || a.inTime || 'N/A'}</td>
-                          {isManagementRole && activeTab !== 'my-attendance' && (
-                            <>
-                              <td className="py-4 text-xs font-mono text-text-sub">{a.ipAddress || 'N/A'}</td>
-                              <td className="py-4 text-xs font-mono text-text-sub">{a.location || 'N/A'}</td>
-                            </>
-                          )}
-                          {isManagementRole && activeTab !== 'my-attendance' && (
-                            <td className="py-4 text-right">
-                              <div className="flex justify-end gap-2">
-                                <button 
-                                  onClick={() => {
-                                    const stud = students.find((s: any) => s.studentId === a.studentId);
-                                    shareAttendanceOnWhatsApp(stud, a, schoolProfile);
-                                  }}
-                                  className="p-2 hover:bg-green-50 text-green-500 rounded-lg transition-all"
-                                  title="Share on WhatsApp"
-                                >
-                                  <MessageCircle size={16} />
-                                </button>
-                                <button 
-                                  onClick={() => setEditingRecord(a)}
-                                  className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-all"
-                                >
-                                  <Edit2 size={16} />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteAttendance(a.id)}
-                                  className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-all"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          )}
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(isManagementRole && activeTab !== 'my-attendance' ? filteredHistory : myAttendance).length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-12 text-center text-text-sub italic">No attendance records found.</td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      ) : (
+                        (isManagementRole && activeTab !== 'my-attendance' ? filteredHistory : myAttendance).map((a: any) => (
+                          <tr key={a.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-4 text-sm font-medium text-text-sub">
+                              {formatDate(a.date)}
+                              <span className="ml-2 text-[10px] font-bold text-primary/60 uppercase">({a.period || 'Morning'})</span>
+                            </td>
+                            {isManagementRole && activeTab !== 'my-attendance' && (
+                              <td className="py-4">
+                                <p className="text-sm font-bold text-text-heading">{a.studentName}</p>
+                                <p className="text-[10px] text-text-sub uppercase">{a.studentId}</p>
+                              </td>
+                            )}
+                            {activeTab === 'my-attendance' && isEmployee && (
+                              <td className="py-4">
+                                <p className="text-sm font-bold text-text-heading">{a.staffName}</p>
+                                <p className="text-[10px] text-text-sub uppercase">{a.staffId} ({a.role})</p>
+                              </td>
+                            )}
+                            <td className="py-4 text-sm font-medium text-text-sub">
+                              {activeTab === 'my-attendance' ? (a.role || 'Staff') : `${a.class} - ${a.section}`}
+                            </td>
+                            <td className="py-4">
+                              <span className={`text-[10px] font-black px-2 py-1 rounded-full uppercase ${
+                                a.status === 'Present' ? 'bg-green-100 text-green-700' : 
+                                a.status === 'Absent' ? 'bg-red-100 text-red-700' : 
+                                a.status === 'Late' ? 'bg-amber-100 text-amber-700' : 
+                                a.status === 'Leave' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {a.status}
+                              </span>
+                            </td>
+                            <td className="py-4 text-sm font-medium text-text-sub">{a.time || a.inTime || 'N/A'}</td>
+                            {isManagementRole && activeTab !== 'my-attendance' && (
+                              <>
+                                <td className="py-4 text-xs font-mono text-text-sub">{a.ipAddress || 'N/A'}</td>
+                                <td className="py-4 text-xs font-mono text-text-sub">{a.location || 'N/A'}</td>
+                              </>
+                            )}
+                            {isManagementRole && activeTab !== 'my-attendance' && (
+                              <td className="py-4 text-right">
+                                <div className="flex justify-end gap-2">
+                                  <button 
+                                    onClick={() => {
+                                      const stud = students.find((s: any) => s.studentId === a.studentId);
+                                      shareAttendanceOnWhatsApp(stud, a, schoolProfile);
+                                    }}
+                                    className="p-2 hover:bg-green-50 text-green-500 rounded-lg transition-all"
+                                    title="Share on WhatsApp"
+                                  >
+                                    <MessageCircle size={16} />
+                                  </button>
+                                  <button 
+                                    onClick={() => setEditingRecord(a)}
+                                    className="p-2 hover:bg-primary/10 text-primary rounded-lg transition-all"
+                                  >
+                                    <Edit2 size={16} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeleteAttendance(a.id)}
+                                    className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-all"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* VIEW MODE 2: MONTHLY VIEW */}
+              {attendanceViewMode === 'month' && activeTab === 'history' && (
+                <div>
+                  {!historyFilters.class ? (
+                    <div className="py-12 text-center text-text-sub italic">
+                      Please select a <strong className="text-primary">Class</strong> to view Monthly Attendance Sheet.
+                    </div>
+                  ) : (
+                    (() => {
+                      const daysInMonth = new Date(selectedYearFilter, selectedMonthFilter, 0).getDate();
+                      const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+                      
+                      const classStudents = students.filter((s: any) => 
+                        s.class === historyFilters.class && 
+                        (!historyFilters.section || s.section === historyFilters.section)
+                      );
+
+                      return (
+                        <div className="space-y-6">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h4 className="font-bold text-sm text-text-secondary uppercase tracking-wider">
+                              Monthly Sheet: {historyFilters.class} {historyFilters.section ? `- ${historyFilters.section}` : ''} ({monthsList.find(m => m.value === selectedMonthFilter)?.label} {selectedYearFilter})
+                            </h4>
+                            <p className="text-xs text-text-sub italic">Scroll horizontally to view all days.</p>
+                          </div>
+
+                          <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                            <table className="w-full text-left border-collapse min-w-[900px]">
+                              <thead className="bg-slate-50 border-b border-slate-200">
+                                <tr>
+                                  <th className="p-3 font-bold text-xs uppercase text-text-secondary tracking-wider sticky left-0 bg-slate-50 z-10 border-r border-slate-200 min-w-[200px]">Student Info</th>
+                                  <th className="p-3 font-bold text-xs uppercase text-text-secondary tracking-wider text-center border-r border-slate-200">Summary</th>
+                                  {daysArray.map((day) => (
+                                    <th key={day} className="p-1 font-bold text-[10px] text-center text-text-secondary border-r border-slate-100 min-w-[32px]">{day}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {classStudents.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={2 + daysInMonth} className="p-8 text-center text-text-sub italic">No students registered in this class.</td>
+                                  </tr>
+                                ) : (
+                                  classStudents.map((s: any) => {
+                                    const studentMonthAttendance = attendance.filter((a: any) => {
+                                      if (a.studentId !== s.studentId) return false;
+                                      const parsed = parseAttendanceDate(a.date);
+                                      return parsed && parsed.year === selectedYearFilter && parsed.month === selectedMonthFilter;
+                                    });
+
+                                    let presentCount = 0;
+                                    let absentCount = 0;
+                                    let lateCount = 0;
+                                    let leaveCount = 0;
+
+                                    studentMonthAttendance.forEach((rec: any) => {
+                                      if (rec.status === 'Present') presentCount++;
+                                      else if (rec.status === 'Absent') absentCount++;
+                                      else if (rec.status === 'Late') lateCount++;
+                                      else if (rec.status === 'Leave' || rec.status === 'Holiday') leaveCount++;
+                                    });
+
+                                    const totalActive = presentCount + absentCount + lateCount + leaveCount;
+                                    const attendanceRate = totalActive > 0 ? Math.round(((presentCount + lateCount) / totalActive) * 100) : null;
+
+                                    return (
+                                      <tr key={s.studentId} className="hover:bg-slate-50/40 transition-colors">
+                                        <td className="p-3 sticky left-0 bg-white z-10 border-r border-slate-200 font-medium">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-7 h-7 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center">
+                                              {s.name?.[0] || '?'}{s.surname?.[0] || ''}
+                                            </div>
+                                            <div>
+                                              <p className="text-xs font-bold text-text-heading line-clamp-1">{s.name} {s.surname}</p>
+                                              <p className="text-[9px] text-text-sub tracking-wider uppercase">{s.studentId}</p>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="p-3 text-center border-r border-slate-200 whitespace-nowrap">
+                                          <div className="flex items-center gap-1.5 justify-center text-[10px] font-bold">
+                                            <span className="text-green-600 bg-green-50 px-1 py-0.5 rounded" title="Present">{presentCount}P</span>
+                                            <span className="text-red-600 bg-red-50 px-1 py-0.5 rounded" title="Absent">{absentCount}A</span>
+                                            <span className="text-amber-600 bg-amber-50 px-1 py-0.5 rounded" title="Late">{lateCount}L</span>
+                                            <span className="text-blue-600 bg-blue-50 px-1 py-0.5 rounded" title="Leave">{leaveCount}LV</span>
+                                            <span className="text-primary bg-primary/5 px-1 py-0.5 rounded-lg border border-primary/10" title="Percentage">
+                                              {attendanceRate !== null ? `${attendanceRate}%` : '-'}
+                                            </span>
+                                          </div>
+                                        </td>
+                                        {daysArray.map((day) => {
+                                          const recForDay = studentMonthAttendance.find((rec: any) => {
+                                            const parsed = parseAttendanceDate(rec.date);
+                                            return parsed && parsed.day === day;
+                                          });
+
+                                          let symbol = '-';
+                                          let cellClass = 'text-slate-300';
+
+                                          if (recForDay) {
+                                            if (recForDay.status === 'Present') {
+                                              symbol = 'P';
+                                              cellClass = 'bg-green-100 text-green-700 font-bold';
+                                            } else if (recForDay.status === 'Absent') {
+                                              symbol = 'A';
+                                              cellClass = 'bg-red-100 text-red-700 font-bold';
+                                            } else if (recForDay.status === 'Late') {
+                                              symbol = 'L';
+                                              cellClass = 'bg-amber-100 text-amber-700 font-bold';
+                                            } else if (recForDay.status === 'Leave' || recForDay.status === 'Holiday') {
+                                              symbol = 'LV';
+                                              cellClass = 'bg-blue-100 text-blue-700 font-bold';
+                                            }
+                                          }
+
+                                          return (
+                                            <td 
+                                              key={day} 
+                                              className={`p-1 text-center text-[10px] border-r border-slate-100 min-w-[32px] ${cellClass}`}
+                                              title={recForDay ? `${s.name}: ${recForDay.status} on day ${day}` : undefined}
+                                            >
+                                              {symbol}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              )}
+
+              {attendanceViewMode === 'month' && activeTab === 'my-attendance' && (
+                <div className="space-y-6">
+                  {(() => {
+                    const myMonthAttendance = myAttendance.filter((a: any) => {
+                      const parsed = parseAttendanceDate(a.date);
+                      return parsed && parsed.year === selectedYearFilter && parsed.month === selectedMonthFilter;
+                    });
+
+                    let presentCount = 0;
+                    let absentCount = 0;
+                    let lateCount = 0;
+                    let leaveCount = 0;
+
+                    myMonthAttendance.forEach((rec: any) => {
+                      if (rec.status === 'Present') presentCount++;
+                      else if (rec.status === 'Absent') absentCount++;
+                      else if (rec.status === 'Late') lateCount++;
+                      else if (rec.status === 'Leave' || rec.status === 'Holiday') leaveCount++;
+                    });
+
+                    const totalActive = presentCount + absentCount + lateCount + leaveCount;
+                    const attendanceRate = totalActive > 0 ? Math.round(((presentCount + lateCount) / totalActive) * 100) : 100;
+
+                    const daysInMonth = new Date(selectedYearFilter, selectedMonthFilter, 0).getDate();
+                    const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fadeIn">
+                        <div className="md:col-span-1 bg-gradient-to-br from-primary/10 to-transparent p-6 rounded-2xl border border-primary/10 flex flex-col items-center justify-center text-center">
+                          <h4 className="text-sm font-bold text-text-sub uppercase tracking-wider mb-4">Attendance Rate</h4>
+                          
+                          <div className="relative w-32 h-32 flex items-center justify-center mb-4">
+                            <svg className="w-full h-full transform -rotate-90">
+                              <circle cx="64" cy="64" r="54" stroke="#e2e8f0" strokeWidth="8" fill="transparent" />
+                              <circle 
+                                cx="64" 
+                                cy="64" 
+                                r="54" 
+                                stroke="var(--color-primary, #4F46E5)" 
+                                strokeWidth="8" 
+                                fill="transparent" 
+                                strokeDasharray={339.29}
+                                strokeDashoffset={339.29 - (339.29 * attendanceRate) / 100}
+                                className="transition-all duration-1000 ease-out"
+                              />
+                            </svg>
+                            <div className="absolute flex flex-col items-center justify-center">
+                              <span className="text-3xl font-black text-text-heading">{attendanceRate}%</span>
+                              <span className="text-[10px] text-text-sub font-bold uppercase">{totalActive} Days Tracked</span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-text-sub max-w-[200px]">
+                            You were present/late for <strong className="text-primary">{presentCount + lateCount} days</strong> out of {totalActive} recorded days in this month.
+                          </p>
+                        </div>
+
+                        <div className="md:col-span-2 space-y-6">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            <div className="bg-green-50 border border-green-100 p-4 rounded-xl text-center">
+                              <p className="text-xs font-bold text-green-700 uppercase">Present</p>
+                              <p className="text-2xl font-black text-green-900 mt-1">{presentCount}</p>
+                            </div>
+                            <div className="bg-red-50 border border-red-100 p-4 rounded-xl text-center">
+                              <p className="text-xs font-bold text-red-700 uppercase">Absent</p>
+                              <p className="text-2xl font-black text-red-900 mt-1">{absentCount}</p>
+                            </div>
+                            <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl text-center">
+                              <p className="text-xs font-bold text-amber-700 uppercase">Late</p>
+                              <p className="text-2xl font-black text-amber-900 mt-1">{lateCount}</p>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl text-center">
+                              <p className="text-xs font-bold text-blue-700 uppercase">Leave</p>
+                              <p className="text-2xl font-black text-blue-900 mt-1">{leaveCount}</p>
+                            </div>
+                          </div>
+
+                          <div className="bg-white border border-slate-100 p-6 rounded-2xl shadow-sm">
+                            <h4 className="font-bold text-sm text-text-heading mb-4 flex items-center justify-between">
+                              <span>📅 Calendar for {monthsList.find(m => m.value === selectedMonthFilter)?.label} {selectedYearFilter}</span>
+                            </h4>
+                            <div className="grid grid-cols-7 gap-2">
+                              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                                <div key={d} className="text-center text-[10px] font-bold text-text-sub uppercase py-1">{d}</div>
+                              ))}
+                              
+                              {(() => {
+                                const startDay = new Date(selectedYearFilter, selectedMonthFilter - 1, 1).getDay();
+                                const padding = [];
+                                for (let i = 0; i < startDay; i++) {
+                                  padding.push(<div key={`pad-${i}`} className="aspect-square bg-slate-50/50 rounded-lg"></div>);
+                                }
+                                return padding;
+                              })()}
+
+                              {daysArray.map((day) => {
+                                const recForDay = myMonthAttendance.find((rec: any) => {
+                                  const parsed = parseAttendanceDate(rec.date);
+                                  return parsed && parsed.day === day;
+                                });
+
+                                let statusColor = 'bg-slate-50 text-slate-400 border border-slate-100';
+                                let tooltip = `Day ${day}: Not Marked`;
+
+                                if (recForDay) {
+                                  tooltip = `Day ${day}: ${recForDay.status} (Marked: ${recForDay.time || recForDay.inTime || 'N/A'})`;
+                                  if (recForDay.status === 'Present') {
+                                    statusColor = 'bg-green-500 text-white font-bold shadow-sm shadow-green-500/20';
+                                  } else if (recForDay.status === 'Absent') {
+                                    statusColor = 'bg-red-500 text-white font-bold shadow-sm shadow-red-500/20';
+                                  } else if (recForDay.status === 'Late') {
+                                    statusColor = 'bg-amber-500 text-white font-bold shadow-sm shadow-amber-500/20';
+                                  } else if (recForDay.status === 'Leave' || recForDay.status === 'Holiday') {
+                                    statusColor = 'bg-blue-500 text-white font-bold shadow-sm shadow-blue-500/20';
+                                  }
+                                }
+
+                                return (
+                                  <div 
+                                    key={day} 
+                                    className={`aspect-square flex flex-col items-center justify-center text-xs rounded-xl transition-all hover:scale-105 cursor-help ${statusColor}`}
+                                    title={tooltip}
+                                  >
+                                    <span className="font-bold">{day}</span>
+                                    {recForDay && <span className="text-[7px] opacity-85 uppercase mt-0.5">{recForDay.status === 'Holiday' ? 'H' : recForDay.status === 'Leave' ? 'LV' : recForDay.status[0]}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* VIEW MODE 3: YEARLY VIEW */}
+              {attendanceViewMode === 'year' && activeTab === 'history' && (
+                <div>
+                  {!historyFilters.class ? (
+                    <div className="py-12 text-center text-text-sub italic">
+                      Please select a <strong className="text-primary">Class</strong> to view Yearly Attendance Summary.
+                    </div>
+                  ) : (
+                    (() => {
+                      const classStudents = students.filter((s: any) => 
+                        s.class === historyFilters.class && 
+                        (!historyFilters.section || s.section === historyFilters.section)
+                      );
+
+                      return (
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-bold text-sm text-text-secondary uppercase tracking-wider">
+                              Yearly Attendance Sheet: {historyFilters.class} {historyFilters.section ? `- ${historyFilters.section}` : ''} ({selectedYearFilter})
+                            </h4>
+                            <p className="text-xs text-text-sub italic">Monthly attendance rates (%) across the academic year.</p>
+                          </div>
+
+                          <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                            <table className="w-full text-left border-collapse min-w-[800px]">
+                              <thead className="bg-slate-50 border-b border-slate-200">
+                                <tr>
+                                  <th className="p-4 font-bold text-xs uppercase text-text-secondary tracking-wider sticky left-0 bg-slate-50 z-10 border-r border-slate-200 min-w-[200px]">Student Info</th>
+                                  <th className="p-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-center border-r border-slate-200">Year Summary</th>
+                                  {monthsList.map((m) => (
+                                    <th key={m.value} className="p-2 font-bold text-[10px] text-center text-text-secondary border-r border-slate-100 min-w-[50px]">{m.label.substring(0, 3)}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {classStudents.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={14} className="p-8 text-center text-text-sub italic">No students registered in this class.</td>
+                                  </tr>
+                                ) : (
+                                  classStudents.map((s: any) => {
+                                    const studentYearAttendance = attendance.filter((a: any) => {
+                                      if (a.studentId !== s.studentId) return false;
+                                      const parsed = parseAttendanceDate(a.date);
+                                      return parsed && parsed.year === selectedYearFilter;
+                                    });
+
+                                    let totalPresent = 0;
+                                    let totalAbsent = 0;
+                                    let totalLate = 0;
+                                    let totalLeave = 0;
+
+                                    studentYearAttendance.forEach((rec: any) => {
+                                      if (rec.status === 'Present') totalPresent++;
+                                      else if (rec.status === 'Absent') totalAbsent++;
+                                      else if (rec.status === 'Late') totalLate++;
+                                      else if (rec.status === 'Leave' || rec.status === 'Holiday') totalLeave++;
+                                    });
+
+                                    const totalActiveYear = totalPresent + totalAbsent + totalLate + totalLeave;
+                                    const yearlyRate = totalActiveYear > 0 ? Math.round(((totalPresent + totalLate) / totalActiveYear) * 100) : null;
+
+                                    return (
+                                      <tr key={s.studentId} className="hover:bg-slate-50/40 transition-colors">
+                                        <td className="p-4 sticky left-0 bg-white z-10 border-r border-slate-200 font-medium">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary font-bold text-xs flex items-center justify-center">
+                                              {s.name?.[0] || '?'}{s.surname?.[0] || ''}
+                                            </div>
+                                            <div>
+                                              <p className="text-xs font-bold text-text-heading line-clamp-1">{s.name} {s.surname}</p>
+                                              <p className="text-[9px] text-text-sub tracking-wider uppercase">{s.studentId}</p>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="p-4 text-center border-r border-slate-200 whitespace-nowrap">
+                                          <div className="flex items-center gap-2 justify-center">
+                                            <span className="text-xs font-bold text-text-heading">
+                                              {totalPresent + totalLate} / {totalActiveYear} Days
+                                            </span>
+                                            <span className="text-xs font-black text-primary bg-primary/10 px-2.5 py-1 rounded-xl">
+                                              {yearlyRate !== null ? `${yearlyRate}%` : '-'}
+                                            </span>
+                                          </div>
+                                        </td>
+                                        {monthsList.map((m) => {
+                                          const monthRecs = studentYearAttendance.filter((rec: any) => {
+                                            const parsed = parseAttendanceDate(rec.date);
+                                            return parsed && parsed.month === m.value;
+                                          });
+
+                                          let mPresent = 0;
+                                          let mAbsent = 0;
+                                          let mLate = 0;
+                                          let mLeave = 0;
+
+                                          monthRecs.forEach((rec: any) => {
+                                            if (rec.status === 'Present') mPresent++;
+                                            else if (rec.status === 'Absent') mAbsent++;
+                                            else if (rec.status === 'Late') mLate++;
+                                            else if (rec.status === 'Leave' || rec.status === 'Holiday') mLeave++;
+                                          });
+
+                                          const mActive = mPresent + mAbsent + mLate + mLeave;
+                                          const mRate = mActive > 0 ? Math.round(((mPresent + mLate) / mActive) * 100) : null;
+
+                                          let bgClass = '';
+                                          if (mRate !== null) {
+                                            if (mRate >= 90) bgClass = 'bg-green-50 text-green-700 font-bold';
+                                            else if (mRate >= 75) bgClass = 'bg-amber-50 text-amber-700 font-bold';
+                                            else bgClass = 'bg-red-50 text-red-700 font-bold';
+                                          }
+
+                                          return (
+                                            <td 
+                                              key={m.value} 
+                                              className={`p-2 text-center text-xs border-r border-slate-100 ${bgClass}`}
+                                              title={mRate !== null ? `${m.label}: ${mPresent}P, ${mAbsent}A, ${mLate}L, ${mLeave}LV` : `No records in ${m.label}`}
+                                            >
+                                              {mRate !== null ? `${mRate}%` : '-'}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    );
+                                  })
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+              )}
+
+              {attendanceViewMode === 'year' && activeTab === 'my-attendance' && (
+                <div className="space-y-6">
+                  {(() => {
+                    const myYearAttendance = myAttendance.filter((a: any) => {
+                      const parsed = parseAttendanceDate(a.date);
+                      return parsed && parsed.year === selectedYearFilter;
+                    });
+
+                    let presentCount = 0;
+                    let absentCount = 0;
+                    let lateCount = 0;
+                    let leaveCount = 0;
+
+                    myYearAttendance.forEach((rec: any) => {
+                      if (rec.status === 'Present') presentCount++;
+                      else if (rec.status === 'Absent') absentCount++;
+                      else if (rec.status === 'Late') lateCount++;
+                      else if (rec.status === 'Leave' || rec.status === 'Holiday') leaveCount++;
+                    });
+
+                    const totalActive = presentCount + absentCount + lateCount + leaveCount;
+                    const attendanceRate = totalActive > 0 ? Math.round(((presentCount + lateCount) / totalActive) * 100) : 100;
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fadeIn">
+                        <div className="md:col-span-1 bg-gradient-to-br from-primary/10 to-transparent p-6 rounded-2xl border border-primary/10 flex flex-col items-center justify-center text-center h-fit">
+                          <h4 className="text-sm font-bold text-text-sub uppercase tracking-wider mb-4">Yearly Attendance Rate</h4>
+                          
+                          <div className="relative w-32 h-32 flex items-center justify-center mb-4">
+                            <svg className="w-full h-full transform -rotate-90">
+                              <circle cx="64" cy="64" r="54" stroke="#e2e8f0" strokeWidth="8" fill="transparent" />
+                              <circle 
+                                cx="64" 
+                                cy="64" 
+                                r="54" 
+                                stroke="var(--color-primary, #4F46E5)" 
+                                strokeWidth="8" 
+                                fill="transparent" 
+                                strokeDasharray={339.29}
+                                strokeDashoffset={339.29 - (339.29 * attendanceRate) / 100}
+                                className="transition-all duration-1000 ease-out"
+                              />
+                            </svg>
+                            <div className="absolute flex flex-col items-center justify-center">
+                              <span className="text-3xl font-black text-text-heading">{attendanceRate}%</span>
+                              <span className="text-[10px] text-text-sub font-bold uppercase">{totalActive} Days Tracked</span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-text-sub max-w-[200px]">
+                            You were present/late for <strong className="text-primary">{presentCount + lateCount} days</strong> out of {totalActive} recorded days in {selectedYearFilter}.
+                          </p>
+                        </div>
+
+                        <div className="md:col-span-2 bg-white border border-slate-100 p-6 rounded-2xl shadow-sm space-y-6">
+                          <h4 className="font-bold text-sm text-text-heading border-b border-slate-100 pb-3 flex items-center justify-between">
+                            <span>📊 Month-by-Month Progress ({selectedYearFilter})</span>
+                          </h4>
+
+                          <div className="space-y-4">
+                            {monthsList.map((m) => {
+                              const monthRecs = myYearAttendance.filter((rec: any) => {
+                                const parsed = parseAttendanceDate(rec.date);
+                                return parsed && parsed.month === m.value;
+                              });
+
+                              let mPresent = 0;
+                              let mAbsent = 0;
+                              let mLate = 0;
+                              let mLeave = 0;
+
+                              monthRecs.forEach((rec: any) => {
+                                if (rec.status === 'Present') mPresent++;
+                                else if (rec.status === 'Absent') mAbsent++;
+                                else if (rec.status === 'Late') mLate++;
+                                else if (rec.status === 'Leave' || rec.status === 'Holiday') mLeave++;
+                              });
+
+                              const mActive = mPresent + mAbsent + mLate + mLeave;
+                              const mRate = mActive > 0 ? Math.round(((mPresent + mLate) / mActive) * 100) : null;
+
+                              return (
+                                <div key={m.value} className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="font-bold text-text-heading">{m.label}</span>
+                                    <span className="font-bold text-text-sub">
+                                      {mRate !== null ? (
+                                        <span className="flex items-center gap-2">
+                                          <span>{mRate}%</span>
+                                          <span className="text-[10px] font-normal text-slate-400">({mPresent + mLate}/{mActive} days)</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-300">No Records</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                                    {mRate !== null ? (
+                                      <div 
+                                        className={`h-full rounded-full transition-all duration-500 ${
+                                          mRate >= 90 ? 'bg-green-500' : mRate >= 75 ? 'bg-amber-500' : 'bg-red-500'
+                                        }`}
+                                        style={{ width: `${mRate}%` }}
+                                      />
+                                    ) : (
+                                      <div className="h-full bg-slate-200 w-0" />
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </Card>
 
             {editingRecord && (
