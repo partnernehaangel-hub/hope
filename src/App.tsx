@@ -207,6 +207,55 @@ const formatDateDMY = (dateStr: any): string => {
   return str;
 };
 
+const sortStudentsList = (studentList: any[], classesList?: string[]) => {
+  const classes = classesList || ['LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+  return [...studentList].sort((a, b) => {
+    // 1. Class-wise sort
+    const idxA = classes.indexOf(a.class);
+    const idxB = classes.indexOf(b.class);
+    const valA = idxA !== -1 ? idxA : 999;
+    const valB = idxB !== -1 ? idxB : 999;
+    if (valA !== valB) {
+      return valA - valB;
+    }
+    
+    // If classes are identical or neither is in classes list, do localeCompare
+    if (valA === 999 && valB === 999 && a.class !== b.class) {
+      const cmpClass = (a.class || '').localeCompare(b.class || '', undefined, { numeric: true, sensitivity: 'base' });
+      if (cmpClass !== 0) return cmpClass;
+    }
+
+    // 2. Section-wise sort (just in case they are in the same class but different sections, e.g. A, B)
+    const secA = a.section || '';
+    const secB = b.section || '';
+    if (secA !== secB) {
+      const cmpSec = secA.localeCompare(secB, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmpSec !== 0) return cmpSec;
+    }
+
+    // 3. Roll number-wise sort
+    const rollA = parseInt(a.rollNumber, 10);
+    const rollB = parseInt(b.rollNumber, 10);
+    if (!isNaN(rollA) && !isNaN(rollB)) {
+      if (rollA !== rollB) return rollA - rollB;
+    } else {
+      const rA = (a.rollNumber || '').toString();
+      const rB = (b.rollNumber || '').toString();
+      const cmpRoll = rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmpRoll !== 0) return cmpRoll;
+    }
+
+    // 4. Fallback to Student ID or Name
+    const nameA = `${a.name || ''} ${a.surname || ''}`.trim();
+    const nameB = `${b.name || ''} ${b.surname || ''}`.trim();
+    if (nameA !== nameB) {
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+    }
+    
+    return (a.studentId || '').localeCompare(b.studentId || '');
+  });
+};
+
 const parseBulkStudents = (input: string, mode: 'auto' | 'excel' | 'double' | 'json', currentSession: string): any[] => {
   if (!input || !input.trim()) return [];
 
@@ -4791,7 +4840,10 @@ const Academics = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {students.filter((s: any) => s.class === promotionFrom).map((s: any) => (
+                        {sortStudentsList(
+                          students.filter((s: any) => s.class === promotionFrom),
+                          masterData.classes
+                        ).map((s: any) => (
                           <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
@@ -5981,11 +6033,14 @@ const FeeManagement = ({
     alert(`${type} balance adjusted by ₹${amount}`);
   };
 
-  const filteredStudentsForCollection = students.filter((s: any) => {
-    return (!searchFilters.class || s.class === searchFilters.class) &&
-           (!searchFilters.section || s.section === searchFilters.section) &&
-           (!searchFilters.search || s.studentId?.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.name.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.surname.toLowerCase().includes(searchFilters.search.toLowerCase()));
-  });
+  const filteredStudentsForCollection = sortStudentsList(
+    students.filter((s: any) => {
+      return (!searchFilters.class || s.class === searchFilters.class) &&
+             (!searchFilters.section || s.section === searchFilters.section) &&
+             (!searchFilters.search || s.studentId?.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.name.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.surname.toLowerCase().includes(searchFilters.search.toLowerCase()));
+    }),
+    masterData.classes
+  );
 
   const getMonthlyDuesBreakdown = (student: any, month: string) => {
     if (!student) return {};
@@ -6166,6 +6221,7 @@ const FeeManagement = ({
           section: selectedStudent.section,
           fee_type: `Consolidated Monthly Fees (${selectedMonth})`,
           amount: totalRemainingDue,
+          amount_payable: totalRemainingDue,
           discount: paymentDetails.discount,
           discount_reason: paymentDetails.discountReason,
           scholarship: paymentDetails.scholarship,
@@ -6189,7 +6245,7 @@ const FeeManagement = ({
         throw error;
       }
 
-      if (inserted) {
+      if (inserted && inserted.length > 0) {
         const newTransaction: FeeTransaction = {
           ...inserted[0],
           studentId: inserted[0].student_id,
@@ -6201,7 +6257,8 @@ const FeeManagement = ({
           collectedBy: inserted[0].collected_by,
           dueDate: inserted[0].due_date,
           totalPaid: inserted[0].total_paid,
-          period: inserted[0].month
+          period: inserted[0].month,
+          amount: inserted[0].amount_payable !== undefined && inserted[0].amount_payable !== null ? inserted[0].amount_payable : inserted[0].amount
         };
 
         setFeeTransactions([newTransaction, ...feeTransactions]);
@@ -8630,7 +8687,10 @@ const TeacherPanel = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {students.filter((s: any) => assignedClasses.some(ac => ac.class === s.class && ac.section === s.section)).map((s: any) => (
+                  {sortStudentsList(
+                    students.filter((s: any) => assignedClasses.some(ac => ac.class === s.class && ac.section === s.section)),
+                    masterData.classes
+                  ).map((s: any) => (
                     <tr key={s.studentId}>
                       <td className="py-3 font-medium">{s.name} {s.surname}</td>
                       <td className="py-3">{s.class}-{s.section}</td>
@@ -11227,10 +11287,13 @@ const ReportsView = ({ students, feeTransactions, attendance, homeworks, hostelA
     { id: 'userlog', title: 'USER LOG', icon: ShieldCheck, color: 'text-slate-500', bgColor: 'bg-slate-50' },
   ];
 
-  const filteredStudents = students.filter((s: any) => 
-    (!filters.class || s.class === filters.class) && 
-    (!filters.section || s.section === filters.section) &&
-    (!filters.session || s.session === filters.session)
+  const filteredStudents = sortStudentsList(
+    students.filter((s: any) => 
+      (!filters.class || s.class === filters.class) && 
+      (!filters.section || s.section === filters.section) &&
+      (!filters.session || s.session === filters.session)
+    ),
+    masterData.classes
   );
 
   const filteredFinance = feeTransactions.filter((t: any) => 
@@ -15467,6 +15530,8 @@ export default function App() {
           ALTER TABLE IF EXISTS fee_collections ADD COLUMN IF NOT EXISTS invoice_number TEXT;
           ALTER TABLE IF EXISTS fee_collections ADD COLUMN IF NOT EXISTS status TEXT;
           ALTER TABLE IF EXISTS fee_collections ADD COLUMN IF NOT EXISTS breakdown JSONB;
+          ALTER TABLE IF EXISTS fee_collections ADD COLUMN IF NOT EXISTS amount NUMERIC DEFAULT 0;
+          ALTER TABLE IF EXISTS fee_collections ADD COLUMN IF NOT EXISTS amount_payable NUMERIC DEFAULT 0;
 
           -- 4. Financial Tables
           CREATE TABLE IF NOT EXISTS contra_entries (
@@ -16439,7 +16504,7 @@ const schoolMigrations = `
         class: ft.class,
         section: ft.section,
         feeType: ft.fee_type,
-        amount: ft.amount,
+        amount: ft.amount_payable !== undefined && ft.amount_payable !== null ? ft.amount_payable : ft.amount,
         discount: ft.discount,
         discountReason: ft.discount_reason,
         scholarship: ft.scholarship,
@@ -19511,23 +19576,7 @@ const schoolMigrations = `
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {students.filter(s => {
-                          const name = s.name || '';
-                          const surname = s.surname || '';
-                          const studentId = s.studentId || '';
-                          const matchesSearch = (name + ' ' + surname + ' ' + studentId).toLowerCase().includes((studentSearchQuery || '').toLowerCase());
-                          const matchesClass = !studentFilterClass || s.class === studentFilterClass;
-                          const matchesSection = !studentFilterSection || s.section === studentFilterSection;
-                          const matchesType = !studentFilterType || s.studentType === studentFilterType;
-                          const matchesSession = !studentFilterSession || s.session === studentFilterSession;
-                          return matchesSearch && matchesClass && matchesSection && matchesType && matchesSession;
-                        }).length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="py-12 text-center text-text-secondary italic">
-                              No students found. Start by registering a new student.
-                            </td>
-                          </tr>
-                        ) : (
+                        {sortStudentsList(
                           students.filter(s => {
                             const name = s.name || '';
                             const surname = s.surname || '';
@@ -19538,7 +19587,29 @@ const schoolMigrations = `
                             const matchesType = !studentFilterType || s.studentType === studentFilterType;
                             const matchesSession = !studentFilterSession || s.session === studentFilterSession;
                             return matchesSearch && matchesClass && matchesSection && matchesType && matchesSession;
-                          }).map((s) => (
+                          }),
+                          masterData.classes
+                        ).length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="py-12 text-center text-text-secondary italic">
+                              No students found. Start by registering a new student.
+                            </td>
+                          </tr>
+                        ) : (
+                          sortStudentsList(
+                            students.filter(s => {
+                              const name = s.name || '';
+                              const surname = s.surname || '';
+                              const studentId = s.studentId || '';
+                              const matchesSearch = (name + ' ' + surname + ' ' + studentId).toLowerCase().includes((studentSearchQuery || '').toLowerCase());
+                              const matchesClass = !studentFilterClass || s.class === studentFilterClass;
+                              const matchesSection = !studentFilterSection || s.section === studentFilterSection;
+                              const matchesType = !studentFilterType || s.studentType === studentFilterType;
+                              const matchesSession = !studentFilterSession || s.session === studentFilterSession;
+                              return matchesSearch && matchesClass && matchesSection && matchesType && matchesSession;
+                            }),
+                            masterData.classes
+                          ).map((s) => (
                             <tr key={s.id} className="text-[11px] sm:text-sm hover:bg-slate-50/50 transition-all">
                               <td className="py-4 font-mono text-xs text-primary font-bold">{s.studentId}</td>
                               <td className="py-4 font-bold text-slate-600">{s.rollNumber || '-'}</td>
@@ -22534,9 +22605,12 @@ const IDCardsModule = ({
 
   const filteredPeople = activeTab === 'teacher' || activeTab === 'experience' 
     ? staff 
-    : students.filter((s: any) => 
-        (!selectedClass || s.class === selectedClass) && 
-        (!selectedSection || s.section === selectedSection)
+    : sortStudentsList(
+        students.filter((s: any) => 
+          (!selectedClass || s.class === selectedClass) && 
+          (!selectedSection || s.section === selectedSection)
+        ),
+        masterData.classes
       );
 
   const tabs = [
