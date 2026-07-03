@@ -419,7 +419,7 @@ export const drawIDCardToPDF = async (
   }
 
   // Draw Quick Identifiers (Blood Group, Class, Roll) under the Photo
-  const bloodGroup = person.bloodGroup || 'N/A';
+  const bloodGroup = String(person.bloodGroup || 'N/A');
   
   if (!isLandscape) {
     // --- PORTRAIT LAYOUT ---
@@ -429,10 +429,10 @@ export const drawIDCardToPDF = async (
       const fieldW = 44;
       const fieldH = 9.5;
       const label1 = isTeacher ? 'DESIGNATION' : 'CLASS / SECTION';
-      const val1 = isTeacher ? (person.designation || 'Teacher') : `${person.class || 'N/A'} - ${person.section || 'N/A'}`;
+      const val1 = isTeacher ? String(person.designation || 'Teacher') : `${person.class || 'N/A'} - ${person.section || 'N/A'}`;
       
       const label2 = isTeacher ? 'STAFF ID' : 'ROLL NUMBER';
-      const val2 = isTeacher ? (person.staffId || person.id || 'N/A') : (person.rollNumber || person.rollNo || 'N/A');
+      const val2 = isTeacher ? String(person.staffId || person.id || 'N/A') : String(person.rollNumber !== undefined && person.rollNumber !== null ? person.rollNumber : (person.rollNo !== undefined && person.rollNo !== null ? person.rollNo : 'N/A'));
 
       // Box 1
       page.drawText(label1, { x: photoX, y: photoY - 7, size: 4.0, font: fontBold, color: textGreyColor });
@@ -491,8 +491,8 @@ export const drawIDCardToPDF = async (
       color: secondaryColor,
     });
 
-    // Construct the details array
-    const details = isTeacher
+    // Construct the details array and map values strictly to strings
+    const rawDetails = isTeacher
       ? [
           { label: 'D.O.B', value: person.dob || person.birthDate || 'N/A' },
           { label: 'FATHER/SPOUSE', value: person.fatherName || 'N/A' },
@@ -506,6 +506,11 @@ export const drawIDCardToPDF = async (
           { label: 'CONTACT NO.', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
           { label: 'ADDRESS', value: person.residentialAddress || person.address || 'N/A' },
         ];
+
+    const details = rawDetails.map(item => ({
+      label: item.label,
+      value: String(item.value ?? 'N/A')
+    }));
 
     let currentY = headerY - 28;
     const fieldSpacing = 12.5;
@@ -568,9 +573,9 @@ export const drawIDCardToPDF = async (
     // 1. Bottom Left Details (under Photo)
     if (type !== 'hostel') {
       const label1 = isTeacher ? 'DESIGNATION' : 'CLASS';
-      const val1 = isTeacher ? (person.designation || 'Teacher') : (person.class || 'N/A');
+      const val1 = isTeacher ? String(person.designation || 'Teacher') : String(person.class || 'N/A');
       const label2 = isTeacher ? 'STAFF ID' : 'ROLL';
-      const val2 = isTeacher ? (person.staffId || person.id || 'N/A') : (person.rollNumber || person.rollNo || 'N/A');
+      const val2 = isTeacher ? String(person.staffId || person.id || 'N/A') : String(person.rollNumber !== undefined && person.rollNumber !== null ? person.rollNumber : (person.rollNo !== undefined && person.rollNo !== null ? person.rollNo : 'N/A'));
 
       const subW = 21;
       const subH = 8.5;
@@ -630,7 +635,7 @@ export const drawIDCardToPDF = async (
       color: secondaryColor,
     });
 
-    const details = isTeacher
+    const rawDetails = isTeacher
       ? [
           { label: 'D.O.B', value: person.dob || person.birthDate || 'N/A' },
           { label: 'FATHER/SPOUSE', value: person.fatherName || 'N/A' },
@@ -644,6 +649,11 @@ export const drawIDCardToPDF = async (
           { label: 'CONTACT NO.', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
           { label: 'ADDRESS', value: person.residentialAddress || person.address || 'N/A' },
         ];
+
+    const details = rawDetails.map(item => ({
+      label: item.label,
+      value: String(item.value ?? 'N/A')
+    }));
 
     // Grid Positions:
     // Row 1: Item 0 (x=60, y=78) & Item 1 (x=148, y=78)

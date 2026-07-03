@@ -2020,7 +2020,7 @@ const Dashboard = ({
                   Quick Access
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
-                  {(isSuperAdmin || isAdmin) && (
+                  {(isSuperAdmin || isAdmin || currentUser?.role === 'accountant') && (
                     <button onClick={() => setView('income-expense')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
                       <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
                         <Plus size={24} className="text-primary group-hover:text-white" />
@@ -2049,7 +2049,7 @@ const Dashboard = ({
                       <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
                         <UserPlus size={24} className="text-primary group-hover:text-white" />
                       </div>
-                      <span className="text-[10px) font-black uppercase tracking-widest">New Admission</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest">New Admission</span>
                     </button>
                   )}
                   {(isSuperAdmin || isAdmin) && (
@@ -2060,13 +2060,15 @@ const Dashboard = ({
                       <span className="text-[10px] font-black uppercase tracking-widest">Attendance</span>
                     </button>
                   )}
-                  <button onClick={() => setView('fee-management')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
-                    <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
-                      <Wallet size={24} className="text-primary group-hover:text-white" />
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest">Collect Fee</span>
-                  </button>
-                  {(isSuperAdmin || isAdmin) && (
+                  {(isSuperAdmin || isAdmin || currentUser?.role === 'accountant') && (
+                    <button onClick={() => setView('fee-management')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
+                      <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
+                        <Wallet size={24} className="text-primary group-hover:text-white" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest">Collect Fee</span>
+                    </button>
+                  )}
+                  {(isSuperAdmin || isAdmin || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office') && (
                     <button onClick={() => setView('id-cards')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
                       <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
                         <Contact2 size={24} className="text-primary group-hover:text-white" />
@@ -3146,7 +3148,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     }
   };
 
-  const scanFilteredStudents = students.filter((s: any) => {
+  const scanFilteredStudents = sortStudentsList(students.filter((s: any) => {
     // For teachers/staff, if no filter is selected, only show their assigned students
     const isTeacher = currentUser?.role === 'teacher' || currentUser?.role === 'staff';
     const noFilters = !scanFilters.class && !scanFilters.section && !studentSearch;
@@ -3161,16 +3163,16 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
       `${s.name} ${s.surname}`.toLowerCase().includes(studentSearch.toLowerCase()) ||
       s.studentId.toLowerCase().includes(studentSearch.toLowerCase());
     return matchesClass && matchesSection && matchesSearch;
-  });
+  }), masterData?.classes);
 
-  const manualFilteredStudents = students.filter((s: any) => {
+  const manualFilteredStudents = sortStudentsList(students.filter((s: any) => {
     const matchesClass = !manualForm.class || s.class === manualForm.class;
     const matchesSection = !manualForm.section || s.section === manualForm.section;
     const matchesSearch = !studentSearch || 
       `${s.name} ${s.surname}`.toLowerCase().includes(studentSearch.toLowerCase()) ||
       s.studentId.toLowerCase().includes(studentSearch.toLowerCase());
     return matchesClass && matchesSection && matchesSearch;
-  });
+  }), masterData?.classes);
 
   const toggleSelectAll = () => {
     if (selectedStudents.length === manualFilteredStudents.length) {
@@ -5719,6 +5721,11 @@ const FeeManagement = ({
     section: '',
     search: ''
   });
+  const [ledgerSearchFilters, setLedgerSearchFilters] = useState({
+    class: '',
+    section: '',
+    search: ''
+  });
   const [reportType, setReportType] = useState<'fees' | 'bank-cash'>('fees');
   const [filters, setFilters] = useState({
     date: '',
@@ -6038,6 +6045,15 @@ const FeeManagement = ({
       return (!searchFilters.class || s.class === searchFilters.class) &&
              (!searchFilters.section || s.section === searchFilters.section) &&
              (!searchFilters.search || s.studentId?.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.name.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.surname.toLowerCase().includes(searchFilters.search.toLowerCase()));
+    }),
+    masterData.classes
+  );
+
+  const filteredStudentsForLedger = sortStudentsList(
+    students.filter((s: any) => {
+      return (!ledgerSearchFilters.class || s.class === ledgerSearchFilters.class) &&
+             (!ledgerSearchFilters.section || s.section === ledgerSearchFilters.section) &&
+             (!ledgerSearchFilters.search || s.studentId?.toLowerCase().includes(ledgerSearchFilters.search.toLowerCase()) || s.name.toLowerCase().includes(ledgerSearchFilters.search.toLowerCase()) || s.surname.toLowerCase().includes(ledgerSearchFilters.search.toLowerCase()));
     }),
     masterData.classes
   );
@@ -7234,103 +7250,262 @@ const FeeManagement = ({
 
       {activeTab === 'ledger' && (
         <div className="space-y-6">
-          <Card>
-            <div className="flex flex-col md:flex-row gap-6 items-end">
-              <div className="flex-1">
-                <label className="label-text">Select Student for Ledger</label>
-                <select 
-                  className="input-field"
-                  value={selectedLedgerStudent?.studentId || ''}
-                  onChange={(e) => {
-                    const student = students.find((s: any) => s.studentId === e.target.value);
-                    setSelectedLedgerStudent(student || null);
-                  }}
-                >
-                  <option value="">Select Student</option>
-                  {students.map((s: any) => (
-                    <option key={s.studentId} value={s.studentId}>
-                      {s.name} {s.surname} ({s.class}-{s.section}) - {s.studentId}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button 
-                onClick={() => {
-                  if (!selectedLedgerStudent) return;
-                  const isHosteller = hostelBeds.some((bed: any) => bed.studentId === selectedLedgerStudent.studentId && bed.status === 'Occupied');
-                  const studentFees = feeMaster.filter(f => 
-                    f.class === selectedLedgerStudent.class &&
-                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
-                    (!f.feeType.toLowerCase().includes('hostel') || isHosteller)
-                  );
-                  const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
-                  const ledgerExportData: any[] = [];
-                  
-                  studentFees.forEach(f => {
-                    ledgerExportData.push({
-                      Date: 'Session Start',
-                      Particulars: `Fee Assigned: ${f.feeType}`,
-                      Type: 'Debit',
-                      Debit: f.amount,
-                      Credit: 0
-                    });
-                  });
+          {(() => {
+            // Helper function to calculate ledger items for the selected student
+            const getLedgerItems = (student: any) => {
+              if (!student) return [];
+              const targetSession = schoolProfile?.currentSession || student.session || '2024-25';
+              const sessionStartYear = parseInt(targetSession.split('-')[0]) || 2024;
+              
+              const isHosteller = hostelBeds.some((bed: any) => bed.studentId === student.studentId && bed.status === 'Occupied');
+              
+              // Filter feeMaster by session and class
+              const studentFees = feeMaster.filter(f => 
+                f.class === student.class &&
+                f.session === targetSession &&
+                (!f.studentType || f.studentType === 'Both' || f.studentType === student.studentType) &&
+                (!f.feeType.toLowerCase().includes('hostel') || isHosteller)
+              );
+              
+              // Filter transactions by session and student
+              const studentTransactions = feeTransactions.filter(t => t.studentId === student.studentId && t.session === targetSession);
+              
+              const ledgerItems: any[] = [];
+              const today = new Date();
+              
+              // Threshold date: current month + 1 month (next month) to include the next month's bill
+              const thresholdDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
 
-                  studentTransactions.forEach(t => {
-                    if (t.fine > 0) {
-                      ledgerExportData.push({
-                        Date: t.date,
-                        Particulars: 'Fine Applied',
-                        Type: 'Debit',
-                        Debit: t.fine,
-                        Credit: 0
+              const monthNames = ["April", "May", "June", "July", "August", "September", "October", "November", "December", "January", "February", "March"];
+
+              studentFees.forEach(f => {
+                if (f.frequency === 'Yearly') {
+                  ledgerItems.push({
+                    date: `${sessionStartYear}-04-01`,
+                    particulars: `Fee Assigned: ${f.feeType} (Yearly)`,
+                    type: 'Debit',
+                    amount: f.amount,
+                    isDebit: true
+                  });
+                } else if (f.frequency === 'Monthly') {
+                  for (let m = 0; m < 12; m++) {
+                    const monthDate = new Date(sessionStartYear, 3 + m, 1);
+                    if (monthDate <= thresholdDate) {
+                      const yearVal = monthDate.getFullYear();
+                      const monthVal = String(monthDate.getMonth() + 1).padStart(2, '0');
+                      const dateStr = `${yearVal}-${monthVal}-01`;
+                      
+                      ledgerItems.push({
+                        date: dateStr,
+                        particulars: `Fee Assigned: ${f.feeType} (${monthNames[m]})`,
+                        type: 'Debit',
+                        amount: f.amount,
+                        isDebit: true
                       });
                     }
-                    ledgerExportData.push({
-                      Date: t.date,
-                      Particulars: `Fee Paid: ${t.feeType} (${t.paymentMode})`,
-                      Type: 'Credit',
-                      Debit: 0,
-                      Credit: t.totalPaid + (t.discount || 0) + (t.scholarship || 0)
-                    });
+                  }
+                } else if (f.frequency === 'Quarterly') {
+                  for (let q = 0; q < 4; q++) {
+                    const quarterDate = new Date(sessionStartYear, 3 + (q * 3), 1);
+                    if (quarterDate <= thresholdDate) {
+                      const yearVal = quarterDate.getFullYear();
+                      const monthVal = String(quarterDate.getMonth() + 1).padStart(2, '0');
+                      const dateStr = `${yearVal}-${monthVal}-01`;
+                      
+                      ledgerItems.push({
+                        date: dateStr,
+                        particulars: `Fee Assigned: ${f.feeType} (Quarter ${q + 1})`,
+                        type: 'Debit',
+                        amount: f.amount,
+                        isDebit: true
+                      });
+                    }
+                  }
+                } else if (f.frequency === 'Half-Yearly') {
+                  for (let h = 0; h < 2; h++) {
+                    const halfYearDate = new Date(sessionStartYear, 3 + (h * 6), 1);
+                    if (halfYearDate <= thresholdDate) {
+                      const yearVal = halfYearDate.getFullYear();
+                      const monthVal = String(halfYearDate.getMonth() + 1).padStart(2, '0');
+                      const dateStr = `${yearVal}-${monthVal}-01`;
+                      
+                      ledgerItems.push({
+                        date: dateStr,
+                        particulars: `Fee Assigned: ${f.feeType} (Half-Year ${h + 1})`,
+                        type: 'Debit',
+                        amount: f.amount,
+                        isDebit: true
+                      });
+                    }
+                  }
+                } else {
+                  ledgerItems.push({
+                    date: `${sessionStartYear}-04-01`,
+                    particulars: `Fee Assigned: ${f.feeType}`,
+                    type: 'Debit',
+                    amount: f.amount,
+                    isDebit: true
                   });
+                }
+              });
 
-                  const ws = XLSX.utils.json_to_sheet(ledgerExportData);
-                  const wb = XLSX.utils.book_new();
-                  XLSX.utils.book_append_sheet(wb, ws, "Ledger");
-                  XLSX.writeFile(wb, `${selectedLedgerStudent.name}_Ledger.xlsx`);
-                }}
-                className="btn-secondary flex items-center gap-2 py-3 px-6"
-              >
-                <Download size={18} /> Export Ledger
-              </button>
-            </div>
-          </Card>
+              // Add transactions and associated fines
+              studentTransactions.forEach(t => {
+                if (t.fine > 0) {
+                  ledgerItems.push({
+                    date: t.date,
+                    particulars: `Fine Applied (${t.period || 'Period'})`,
+                    type: 'Debit',
+                    amount: t.fine,
+                    isDebit: true
+                  });
+                }
+                
+                ledgerItems.push({
+                  date: t.date,
+                  particulars: `Fee Paid: ${t.feeType} (Mode: ${t.paymentMode})`,
+                  breakdown: t.breakdown,
+                  type: 'Credit',
+                  amount: t.totalPaid + (t.discount || 0) + (t.scholarship || 0),
+                  isDebit: false,
+                  paidOnly: t.totalPaid,
+                  discount: (t.discount || 0) + (t.scholarship || 0)
+                });
+              });
 
-          {selectedLedgerStudent ? (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {(() => {
-                  const isHosteller = hostelBeds.some((bed: any) => bed.studentId === selectedLedgerStudent.studentId && bed.status === 'Occupied');
-                  const studentFees = feeMaster.filter(f => 
-                    f.class === selectedLedgerStudent.class &&
-                    (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
-                    (!f.feeType.toLowerCase().includes('hostel') || isHosteller)
-                  );
-                  const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
+              // Sort chronologically. If dates match, debits come before credits
+              ledgerItems.sort((a, b) => {
+                const timeA = new Date(a.date).getTime();
+                const timeB = new Date(b.date).getTime();
+                if (timeA === timeB) {
+                  if (a.isDebit && !b.isDebit) return -1;
+                  if (!a.isDebit && b.isDebit) return 1;
+                }
+                return timeA - timeB;
+              });
+
+              return ledgerItems;
+            };
+
+            const ledgerItems = selectedLedgerStudent ? getLedgerItems(selectedLedgerStudent) : [];
+
+            // Calculate summaries based on ledger items
+            const totalAssigned = ledgerItems.filter(item => item.isDebit).reduce((sum, item) => sum + item.amount, 0);
+            const totalPaid = ledgerItems.filter(item => !item.isDebit).reduce((sum, item) => sum + item.paidOnly, 0);
+            const totalDiscount = ledgerItems.filter(item => !item.isDebit).reduce((sum, item) => sum + item.discount, 0);
+            const balance = totalAssigned - totalPaid - totalDiscount;
+
+            return (
+              <>
+                <Card>
+                  <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
+                    <UserPlus size={20} />
+                    Search & Select Student for Ledger
+                  </h3>
                   
-                  const totalAssigned = studentFees.reduce((sum, f) => sum + f.amount, 0);
-                  const totalFines = studentTransactions.reduce((sum, t) => sum + (t.fine || 0), 0);
-                  const totalPaid = studentTransactions.reduce((sum, t) => sum + t.totalPaid, 0);
-                  const totalDiscount = studentTransactions.reduce((sum, t) => sum + (t.discount || 0), 0);
-                  const totalScholarship = studentTransactions.reduce((sum, t) => sum + (t.scholarship || 0), 0);
-                  const balance = (totalAssigned + totalFines) - totalPaid - totalDiscount - totalScholarship;
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 p-6 bg-primary/5 rounded-3xl border border-primary/10 shadow-inner">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Select Class</label>
+                      <select 
+                        className="input-field py-3 bg-white border-primary/20 focus:border-primary"
+                        value={ledgerSearchFilters.class}
+                        onChange={(e) => setLedgerSearchFilters({...ledgerSearchFilters, class: e.target.value})}
+                      >
+                        <option value="">All Classes</option>
+                        {masterData.classes.map((c: string) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Select Section</label>
+                      <select 
+                        className="input-field py-3 bg-white border-primary/20 focus:border-primary"
+                        value={ledgerSearchFilters.section}
+                        onChange={(e) => setLedgerSearchFilters({...ledgerSearchFilters, section: e.target.value})}
+                      >
+                        <option value="">All Sections</option>
+                        {masterData.sections.map((s: string) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest">Student ID / Name</label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-sub" size={14} />
+                        <input 
+                          type="text"
+                          placeholder="Search student..."
+                          className="input-field py-3 pl-10 bg-white border-primary/20 focus:border-primary"
+                          value={ledgerSearchFilters.search || ''}
+                          onChange={(e) => setLedgerSearchFilters({...ledgerSearchFilters, search: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-end">
+                      <button 
+                        onClick={() => {
+                          if (filteredStudentsForLedger.length === 0) {
+                            alert('No students found matching these filters.');
+                          } else {
+                            alert(`Found ${filteredStudentsForLedger.length} students. Please select one from the dropdown below.`);
+                          }
+                        }}
+                        className="w-full bg-primary text-white py-3 rounded-2xl font-bold text-xs shadow-xl shadow-primary/20 flex items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all"
+                      >
+                        <Search size={16} /> Search Students
+                      </button>
+                    </div>
+                  </div>
 
-                  return (
-                    <>
+                  <div className="flex flex-col md:flex-row gap-6 items-end">
+                    <div className="flex-1 space-y-2">
+                      <label className="label-text">Select Student</label>
+                      <select 
+                        className="input-field"
+                        value={selectedLedgerStudent?.studentId || ''}
+                        onChange={(e) => {
+                          const student = students.find((s: any) => s.studentId === e.target.value);
+                          setSelectedLedgerStudent(student || null);
+                        }}
+                      >
+                        <option value="">Select Student</option>
+                        {filteredStudentsForLedger.map((s: any) => (
+                          <option key={s.studentId} value={s.studentId}>
+                            {s.name} {s.surname} ({s.class}-{s.section}) - {s.studentId}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-text-sub italic ml-1">{filteredStudentsForLedger.length} students found matching filters.</p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        if (!selectedLedgerStudent) return;
+                        const ledgerExportData = ledgerItems.map((item) => {
+                          return {
+                            Date: item.date,
+                            Particulars: item.particulars,
+                            Type: item.type,
+                            Debit: item.isDebit ? item.amount : 0,
+                            Credit: !item.isDebit ? item.amount : 0
+                          };
+                        });
+
+                        const ws = XLSX.utils.json_to_sheet(ledgerExportData);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, "Ledger");
+                        XLSX.writeFile(wb, `${selectedLedgerStudent.name}_Ledger.xlsx`);
+                      }}
+                      className="btn-secondary flex items-center gap-2 py-3 px-6 h-[46px]"
+                    >
+                      <Download size={18} /> Export Ledger
+                    </button>
+                  </div>
+                </Card>
+
+                {selectedLedgerStudent ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                       <Card className="p-6 border-l-4 border-blue-500">
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Total Assigned</p>
-                        <p className="text-2xl font-black text-text-heading">₹{(totalAssigned + totalFines).toLocaleString()}</p>
+                        <p className="text-2xl font-black text-text-heading">₹{totalAssigned.toLocaleString()}</p>
                       </Card>
                       <Card className="p-6 border-l-4 border-green-500">
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Total Paid</p>
@@ -7338,159 +7513,98 @@ const FeeManagement = ({
                       </Card>
                       <Card className="p-6 border-l-4 border-orange-500">
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Total Discounts</p>
-                        <p className="text-2xl font-black text-orange-600">₹{(totalDiscount + totalScholarship).toLocaleString()}</p>
+                        <p className="text-2xl font-black text-orange-600">₹{totalDiscount.toLocaleString()}</p>
                       </Card>
                       <Card className="p-6 border-l-4 border-red-500">
                         <p className="text-[10px] font-black text-text-sub uppercase tracking-widest mb-1">Balance Due</p>
-                        <p className="text-2xl font-black text-red-600">₹{balance.toLocaleString()}</p>
+                        <p className={`text-2xl font-black ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>₹{balance.toLocaleString()}</p>
                       </Card>
-                    </>
-                  );
-                })()}
-              </div>
+                    </div>
 
-              <Card>
-                <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
-                  <BookOpen size={20} />
-                  Transaction History (Ledger)
-                </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="border-b border-slate-200">
-                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
-                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Particulars</th>
-                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Type</th>
-                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Debit (Due)</th>
-                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Credit (Paid)</th>
-                        <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(() => {
-                        const isHosteller = hostelBeds.some((bed: any) => bed.studentId === selectedLedgerStudent.studentId && bed.status === 'Occupied');
-                        const studentFees = feeMaster.filter(f => 
-                          f.class === selectedLedgerStudent.class &&
-                          (!f.studentType || f.studentType === 'Both' || f.studentType === selectedLedgerStudent.studentType) &&
-                          (!f.feeType.toLowerCase().includes('hostel') || isHosteller)
-                        );
-                        const studentTransactions = feeTransactions.filter(t => t.studentId === selectedLedgerStudent.studentId);
-                        
-                        const ledgerItems: any[] = [];
-                        
-                        // Add base fees
-                        studentFees.forEach(f => {
-                          ledgerItems.push({
-                            date: '2024-04-01', // Session start
-                            particulars: `Fee Assigned: ${f.feeType} (${f.frequency})`,
-                            type: 'Debit',
-                            amount: f.amount,
-                            isDebit: true
-                          });
-                        });
-
-                        // Add transactions and associated fines
-                        studentTransactions.forEach(t => {
-                          // Debit the fine first if it exists
-                          if (t.fine > 0) {
-                            ledgerItems.push({
-                              date: t.date,
-                              particulars: `Fine Applied (${t.period || 'Period'})`,
-                              type: 'Debit',
-                              amount: t.fine,
-                              isDebit: true
-                            });
-                          }
-
-                          // Credit the payment
-                          ledgerItems.push({
-                            date: t.date,
-                            particulars: `Fee Paid: ${t.feeType} (Mode: ${t.paymentMode})`,
-                            breakdown: t.breakdown,
-                            type: 'Credit',
-                            amount: t.totalPaid + (t.discount || 0) + (t.scholarship || 0),
-                            isDebit: false,
-                            paidOnly: t.totalPaid,
-                            discount: (t.discount || 0) + (t.scholarship || 0)
-                          });
-                        });
-
-                        ledgerItems.sort((a, b) => {
-                          if (a.date === '2024-04-01' && b.date !== '2024-04-01') return -1;
-                          if (b.date === '2024-04-01' && a.date !== '2024-04-01') return 1;
-                          if (a.date === b.date) {
-                            // On same date, debits come before credits (to show logic of fine applied then paid)
-                            if (a.isDebit && !b.isDebit) return -1;
-                            if (b.isDebit && !a.isDebit) return 1;
-                          }
-                          return new Date(a.date).getTime() - new Date(b.date).getTime();
-                        });
-
-                        let runningBalance = 0;
-
-                        return ledgerItems.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-12 text-center text-text-sub">No transactions found for this student.</td>
-                          </tr>
-                        ) : (
-                          ledgerItems.map((item, idx) => {
-                            if (item.isDebit) {
-                              runningBalance += item.amount;
-                            } else {
-                              runningBalance -= item.amount;
-                            }
-
-                            return (
-                              <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                                <td className="py-4 text-sm text-text-sub">{item.date}</td>
-                                <td className="py-4">
-                                  <p className="text-sm font-bold text-text-heading">{item.particulars}</p>
-                                  {item.breakdown && Object.keys(item.breakdown).length > 0 && (
-                                    <div className="mt-1 flex flex-wrap gap-2">
-                                      {Object.entries(item.breakdown).map(([type, amt]) => (
-                                        <span key={type} className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded uppercase">
-                                          {type}: ₹{amt.toLocaleString()}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {!item.isDebit && item.discount > 0 && (
-                                    <p className="text-[10px] text-orange-600 font-bold uppercase mt-1">Incl. ₹{item.discount.toLocaleString()} Discount</p>
-                                  )}
-                                </td>
-                                <td className="py-4">
-                                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${item.isDebit ? 'bg-rose-100 text-rose-600' : 'bg-green-100 text-green-600'}`}>
-                                    {item.type}
-                                  </span>
-                                </td>
-                                <td className="py-4 text-sm font-black text-rose-600 text-right">
-                                  {item.isDebit ? `₹${item.amount.toLocaleString()}` : '-'}
-                                </td>
-                                <td className="py-4 text-sm font-black text-green-600 text-right">
-                                  {!item.isDebit ? `₹${item.amount.toLocaleString()}` : '-'}
-                                </td>
-                                <td className={`py-4 text-sm font-black text-right ${runningBalance > 0 ? 'text-rose-600' : 'text-green-600'}`}>
-                                  ₹{runningBalance.toLocaleString()}
-                                </td>
+                    <Card>
+                      <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-primary">
+                        <BookOpen size={20} />
+                        Transaction History (Ledger)
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-b border-slate-200">
+                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
+                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Particulars</th>
+                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Type</th>
+                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Debit (Due)</th>
+                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Credit (Paid)</th>
+                              <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider text-right">Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {ledgerItems.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="py-12 text-center text-text-sub">No transactions found for this student.</td>
                               </tr>
-                            );
-                          })
-                        );
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
-              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
-                <Users size={40} />
-              </div>
-              <h3 className="text-xl font-black text-text-heading uppercase">No Student Selected</h3>
-              <p className="text-text-sub font-medium max-w-xs mx-auto mt-2">Please select a student from the dropdown above to view their detailed financial ledger.</p>
-            </div>
-          )}
+                            ) : (() => {
+                              let runningBalance = 0;
+                              return ledgerItems.map((item, idx) => {
+                                if (item.isDebit) {
+                                  runningBalance += item.amount;
+                                } else {
+                                  runningBalance -= item.amount;
+                                }
+
+                                return (
+                                  <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="py-4 text-sm text-text-sub">{item.date}</td>
+                                    <td className="py-4">
+                                      <p className="text-sm font-bold text-text-heading">{item.particulars}</p>
+                                      {item.breakdown && Object.keys(item.breakdown).length > 0 && (
+                                        <div className="mt-1 flex flex-wrap gap-2">
+                                          {Object.entries(item.breakdown).map(([type, amt]) => (
+                                            <span key={type} className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded uppercase">
+                                              {type}: ₹{amt.toLocaleString()}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {!item.isDebit && item.discount > 0 && (
+                                        <p className="text-[10px] text-orange-600 font-bold uppercase mt-1">Incl. ₹{item.discount.toLocaleString()} Discount</p>
+                                      )}
+                                    </td>
+                                    <td className="py-4">
+                                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${item.isDebit ? 'bg-rose-100 text-rose-600' : 'bg-green-100 text-green-600'}`}>
+                                        {item.type}
+                                      </span>
+                                    </td>
+                                    <td className="py-4 text-sm font-black text-rose-600 text-right">
+                                      {item.isDebit ? `₹${item.amount.toLocaleString()}` : '-'}
+                                    </td>
+                                    <td className="py-4 text-sm font-black text-green-600 text-right">
+                                      {!item.isDebit ? `₹${item.amount.toLocaleString()}` : '-'}
+                                    </td>
+                                    <td className={`py-4 text-sm font-black text-right ${runningBalance > 0 ? 'text-rose-600' : 'text-green-600'}`}>
+                                      ₹{runningBalance.toLocaleString()}
+                                    </td>
+                                  </tr>
+                                );
+                              });
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Card>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 mb-6">
+                      <Users size={40} />
+                    </div>
+                    <h3 className="text-xl font-black text-text-heading uppercase">No Student Selected</h3>
+                    <p className="text-text-sub font-medium max-w-xs mx-auto mt-2">Please select a student from the dropdown above to view their detailed financial ledger.</p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -9888,10 +10002,28 @@ const LiveCamera = ({ cameraUrls }: { cameraUrls: { id: string, name: string, ur
 const DueFeesModule = ({ students, feeMaster, feeTransactions, currentUser, getStudentDueFees, shareFeeOnWhatsApp, schoolProfile }: any) => {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super-admin';
   
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedClass, setSelectedClass] = useState('');
+
   const dueStudents = students.map((s: any) => ({
     ...s,
     dueAmount: getStudentDueFees(s)
   })).filter((s: any) => s.dueAmount > 0);
+
+  const uniqueClasses = Array.from(new Set(dueStudents.map((s: any) => s.class))).filter(Boolean);
+
+  const filteredDueStudents = dueStudents.filter((s: any) => {
+    const matchesSearch = searchTerm ? (
+      `${s.name} ${s.surname}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.studentId && s.studentId.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (s.class && s.class.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (s.rollNumber && s.rollNumber.toLowerCase().includes(searchTerm.toLowerCase()))
+    ) : true;
+    
+    const matchesClass = selectedClass ? s.class === selectedClass : true;
+    
+    return matchesSearch && matchesClass;
+  });
 
   const handleSendReminder = () => {
     if (dueStudents.length === 0) return;
@@ -9991,9 +10123,36 @@ const DueFeesModule = ({ students, feeMaster, feeTransactions, currentUser, getS
         <div className="flex items-center justify-between mb-8">
           <h3 className="font-bold text-text-heading">Pending Fee List</h3>
           <div className="flex gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input type="text" placeholder="Search student..." className="input-field pl-10 py-2 text-sm w-64" />
+            <select
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+              className="input-field py-2 text-sm w-44"
+            >
+              <option value="">All Classes</option>
+              {uniqueClasses.map((cls: any) => (
+                <option key={cls} value={cls}>{cls}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Search student..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="input-field pl-10 py-2 text-sm w-64" 
+                />
+              </div>
+              <button 
+                onClick={() => {
+                  // Simply triggers filter update reactive state
+                }}
+                className="bg-primary hover:bg-primary/90 text-white text-xs font-black px-4 py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all"
+              >
+                <Search size={14} />
+                Search
+              </button>
             </div>
           </div>
         </div>
@@ -10010,7 +10169,7 @@ const DueFeesModule = ({ students, feeMaster, feeTransactions, currentUser, getS
               </tr>
             </thead>
             <tbody className="text-sm">
-              {dueStudents.map((s: any) => (
+              {filteredDueStudents.map((s: any) => (
                 <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50 transition-all">
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
@@ -14877,26 +15036,35 @@ const IncomeExpenseView = ({ incomes, setIncomes, expenses, setExpenses, incomeH
   );
 };
 
-const downloadAPK = (type: 'student' | 'staff') => {
+const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
   const appUrl = window.location.origin;
+  const schoolName = schoolProfile?.name || 'SUBRAI MISSION CONVENT SCHOOL';
+  const logoUrl = schoolProfile?.logo || '';
+  const sanitizedFileName = schoolName.replace(/[^a-zA-Z0-9]/g, '_') + '.apk';
   
   const modalHtml = `
     <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15,23,42,0.85); backdrop-filter: blur(8px); z-index: 9999; display: flex; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px;">
       <div style="background: white; border-radius: 32px; max-width: 480px; width: 100%; padding: 40px; text-align: center; position: relative; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border: 1px solid rgba(226,232,240,0.8); overflow-y: auto; max-height: 90vh;">
         <button id="close-apk-modal" style="position: absolute; top: 20px; right: 20px; border: none; background: #e2e8f0; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: bold; color: #475569; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✕</button>
         
-        <div style="background: #eff6ff; width: 72px; height: 72px; border-radius: 24px; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; color: #2f5d9f;">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+        <div style="margin: 0 auto 24px; text-align: center; display: flex; justify-content: center;">
+          ${logoUrl ? `
+            <img src="${logoUrl}" style="width: 72px; height: 72px; border-radius: 24px; object-fit: contain; border: 1px solid #e2e8f0; padding: 4px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);" referrerPolicy="no-referrer" alt="Logo" />
+          ` : `
+            <div style="background: #eff6ff; width: 72px; height: 72px; border-radius: 24px; display: flex; align-items: center; justify-content: center; color: #2f5d9f;">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+            </div>
+          `}
         </div>
         
-        <h2 style="font-weight: 900; font-size: 20px; margin-bottom: 8px; color: #0f172a; text-transform: uppercase; letter-spacing: -0.025em;">Install Hope English School App</h2>
+        <h2 style="font-weight: 900; font-size: 18px; margin-bottom: 8px; color: #0f172a; text-transform: uppercase; letter-spacing: -0.025em; line-height: 1.3;">Install ${schoolName} App</h2>
         <p style="color: #64748b; font-size: 13px; margin-bottom: 28px; font-weight: 500;">Get the school App built natively for your mobile phone! Choose your preferred method below.</p>
         
         <div style="display: flex; gap: 8px; background: #f1f5f9; padding: 4px; border-radius: 16px; margin-bottom: 24px;">
           <button id="tab-apk" style="flex: 1; border: none; background: white; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #2f5d9f; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 50%;">DIRECT APK (ANDROID)</button>
           <button id="tab-pwa" style="flex: 1; border: none; background: transparent; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #64748b; cursor: pointer; width: 50%;">PWA (ADD TO HOME)</button>
         </div>
-
+ 
         <div id="content-apk" style="display: block;">
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 18px; border-radius: 20px; text-align: left; margin-bottom: 24px;">
             <p style="font-weight: 800; font-size: 11px; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">🚀 Native Android Application:</p>
@@ -14908,9 +15076,9 @@ const downloadAPK = (type: 'student' | 'staff') => {
             </ul>
           </div>
           
-          <a href="/Hope_English_School.apk" download="Hope_English_School.apk" style="display: block; width: 100%; background: #2f5d9f; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-shadow: 0 4px 12px rgba(47,93,159,0.3); box-sizing: border-box;">Download Native APK</a>
+          <a href="/Hope_English_School.apk" download="${sanitizedFileName}" style="display: block; width: 100%; background: #2f5d9f; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-shadow: 0 4px 12px rgba(47,93,159,0.3); box-sizing: border-box;">Download Native APK</a>
         </div>
-
+ 
         <div id="content-pwa" style="display: none;">
           <div style="background: white; padding: 12px; border: 2px solid #f1f5f9; border-radius: 24px; display: inline-block; margin-bottom: 24px;">
             <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${appUrl}" style="width: 160px; height: 160px; display: block;" referrerPolicy="no-referrer" alt="QR" />
@@ -15157,13 +15325,13 @@ const SuperAdminPanel = ({ users, setUsers, schoolProfile, setSchoolProfile }: a
           </div>
           <div className="space-y-2">
             <button 
-              onClick={() => downloadAPK('student')}
+              onClick={() => downloadAPK('student', schoolProfile)}
               className="w-full py-3 bg-white border-2 border-primary/20 rounded-xl text-xs font-black text-primary hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-2"
             >
               <Download size={14} /> Student/Parent APK
             </button>
             <button 
-              onClick={() => downloadAPK('staff')}
+              onClick={() => downloadAPK('staff', schoolProfile)}
               className="w-full py-3 bg-white border-2 border-primary/20 rounded-xl text-xs font-black text-primary hover:bg-primary hover:text-white transition-all flex items-center justify-center gap-2"
             >
               <Download size={14} /> Staff/Teacher APK
@@ -15986,6 +16154,10 @@ const schoolMigrations = `
     const isStudentOrParent = currentUser?.role === 'student' || currentUser?.role === 'parent';
     const isAccountant = currentUser?.role === 'accountant';
     const isNotAdmin = currentUser?.role !== 'admin' && currentUser?.role !== 'super-admin';
+    const isFinanceOrReportsPrivileged = currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant';
+    
+    // Protect FEE MANAGEMENT, DUE FEES, COMMUNICATION, INCOME & EXPENSE, REPORTS from unauthorized roles
+    const financeAndReportsViews = ['fee-management', 'due-fees', 'communicate', 'income-expense', 'reports'];
     
     if (isStudentOrParent && restrictedViews.includes(view)) {
       setView('dashboard');
@@ -15993,6 +16165,40 @@ const schoolMigrations = `
 
     if (isNotAdmin && (view === 'attendance' || view === 'staff-attendance')) {
       setView('dashboard');
+    }
+
+    const isFrontOfficeOrAdmin = currentUser?.role === 'admin' || 
+                                 currentUser?.role === 'super-admin' || 
+                                 currentUser?.role === 'receptionist' || 
+                                 currentUser?.role === 'front-office' || 
+                                 currentUser?.role === 'front_office';
+
+    if (view === 'id-cards' && !isFrontOfficeOrAdmin) {
+      if (currentUser?.role === 'teacher') {
+        setView('teacher-panel');
+      } else if (currentUser?.role === 'student' || currentUser?.role === 'parent') {
+        setView('student-panel');
+      } else if (currentUser?.role === 'warden') {
+        setView('hostel');
+      } else {
+        setView('dashboard');
+      }
+    }
+
+    if (!isFinanceOrReportsPrivileged && financeAndReportsViews.includes(view)) {
+      if (isStudentOrParent && view === 'due-fees') {
+        // Student/Parent can access their own due fees page
+      } else {
+        if (currentUser?.role === 'teacher') {
+          setView('teacher-panel');
+        } else if (currentUser?.role === 'student' || currentUser?.role === 'parent') {
+          setView('student-panel');
+        } else if (currentUser?.role === 'warden') {
+          setView('hostel');
+        } else {
+          setView('dashboard');
+        }
+      }
     }
 
     if (isAccountant && !['dashboard', 'fee-management', 'reports', 'student-list', 'academics', 'calendar', 'examination'].includes(view)) {
@@ -16759,16 +16965,32 @@ const schoolMigrations = `
       })));
 
       const eResults = eResultsRes.data;
-      if (eResults) setExamResults(eResults.map(er => ({
-        id: er.id,
-        examName: er.exam_name,
-        examType: er.exam_type,
-        studentId: er.student_id,
-        subject: er.subject,
-        marks: er.marks_obtained,
-        maxMarks: er.max_marks,
-        feedback: er.feedback
-      })));
+      if (eResults) setExamResults(eResults.map(er => {
+        // Find matching exam schedule by comparing exam ID/name and subject, matching with the student's class and section
+        const studentObj = studentsData ? studentsData.find((st: any) => st.student_id === er.student_id) : null;
+        const matchingSchedule = eSchedules ? eSchedules.find((es: any) => {
+          const matchExam = (es.exam_id === er.exam_name || es.exam_name === er.exam_name);
+          const matchSubject = es.subject === er.subject;
+          if (!matchExam || !matchSubject) return false;
+          if (studentObj) {
+            return es.class_name === studentObj.class_name && es.section_name === studentObj.section_name;
+          }
+          return true;
+        }) : null;
+
+        return {
+          id: er.id,
+          examName: er.exam_name,
+          examType: er.exam_type,
+          studentId: er.student_id,
+          subject: er.subject,
+          marks: er.marks_obtained,
+          marksObtained: er.marks_obtained,
+          maxMarks: er.max_marks,
+          feedback: er.feedback,
+          examScheduleId: matchingSchedule ? matchingSchedule.id : ''
+        };
+      }));
 
       const rTemplates = rTemplatesRes.data;
       if (rTemplates) setReportCardTemplates(rTemplates.map(rt => ({
@@ -17822,7 +18044,7 @@ const schoolMigrations = `
           {/* Logo Area */}
           <div className="flex justify-center mb-8">
             <button 
-              onClick={() => downloadAPK('student')}
+              onClick={() => downloadAPK('student', schoolProfile)}
               className="bg-white p-6 rounded-[32px] shadow-2xl border-4 border-slate-50 hover:scale-105 transition-transform cursor-pointer group relative"
               title="Click to download Android App"
             >
@@ -17956,7 +18178,7 @@ const schoolMigrations = `
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                   <button 
-                    onClick={() => downloadAPK('student')}
+                    onClick={() => downloadAPK('student', schoolProfile)}
                     className="flex items-center justify-center gap-3 bg-slate-900 text-white py-3 px-4 rounded-2xl hover:bg-slate-800 transition-all group shadow-lg shadow-slate-900/20"
                   >
                     <Smartphone size={24} className="group-hover:scale-110 transition-transform text-green-400" />
@@ -17967,7 +18189,7 @@ const schoolMigrations = `
                   </button>
 
                   <button 
-                    onClick={() => downloadAPK('staff')}
+                    onClick={() => downloadAPK('staff', schoolProfile)}
                     className="flex items-center justify-center gap-3 bg-slate-900 text-white py-3 px-4 rounded-2xl hover:bg-slate-800 transition-all group shadow-lg shadow-slate-900/20"
                   >
                     <Smartphone size={24} className="group-hover:scale-110 transition-transform text-blue-400" />
@@ -18203,7 +18425,7 @@ const schoolMigrations = `
       `}>
         <div className="p-6 flex items-center gap-3 border-b border-slate-50 relative">
           <button 
-            onClick={() => downloadAPK('student')}
+            onClick={() => downloadAPK('student', schoolProfile)}
             className="shrink-0 hover:scale-110 transition-transform cursor-pointer"
             title="Download Android App"
           >
@@ -18303,7 +18525,7 @@ const schoolMigrations = `
                   isSidebarOpen={isSidebarOpen}
                 />
               )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant' || currentUser?.role === 'staff') && (
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
                 <>
                   <SidebarItem 
                     icon={Receipt} 
@@ -18319,7 +18541,7 @@ const schoolMigrations = `
                     onClick={() => setView('due-fees')} 
                     isSidebarOpen={isSidebarOpen}
                   />
-                  {(currentUser?.role !== 'accountant' && currentUser?.role !== 'staff') && (
+                  {currentUser?.role !== 'accountant' && (
                     <SidebarItem 
                       icon={UserCog} 
                       label={isSidebarOpen ? "Human Resource" : ""} 
@@ -18339,7 +18561,7 @@ const schoolMigrations = `
                   isSidebarOpen={isSidebarOpen}
                 />
               )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
                 <SidebarItem 
                   icon={MessageCircle} 
                   label={isSidebarOpen ? "Communication" : ""} 
@@ -18348,7 +18570,7 @@ const schoolMigrations = `
                   isSidebarOpen={isSidebarOpen}
                 />
               )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
                 <SidebarItem 
                   icon={Coins} 
                   label={isSidebarOpen ? "Income & Expense" : ""} 
@@ -18413,7 +18635,7 @@ const schoolMigrations = `
               isSidebarOpen={isSidebarOpen}
             />
           )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office') && (
             <>
               <SidebarItem 
                 icon={UserPlus} 
@@ -18444,7 +18666,7 @@ const schoolMigrations = `
               />
             </>
           )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant' || currentUser?.role === 'staff') && (
+          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
             <SidebarItem 
               icon={BarChart3} 
               label={isSidebarOpen ? "Reports" : ""} 
@@ -22606,10 +22828,16 @@ const IDCardsModule = ({
   const filteredPeople = activeTab === 'teacher' || activeTab === 'experience' 
     ? staff 
     : sortStudentsList(
-        students.filter((s: any) => 
-          (!selectedClass || s.class === selectedClass) && 
-          (!selectedSection || s.section === selectedSection)
-        ),
+        students.filter((s: any) => {
+          const sClassNorm = (s.class || '').replace(/\s*\([A-Z]\)\s*/i, '').trim().toLowerCase();
+          const selClassNorm = (selectedClass || '').replace(/\s*\([A-Z]\)\s*/i, '').trim().toLowerCase();
+          const matchesClass = !selectedClass || s.class === selectedClass || sClassNorm === selClassNorm;
+
+          const sSecNorm = s.section || (s.class && s.class.match(/\(([A-Z])\)/i)?.[1]) || 'A';
+          const matchesSection = !selectedSection || s.section === selectedSection || sSecNorm.toUpperCase() === selectedSection.toUpperCase();
+
+          return matchesClass && matchesSection;
+        }),
         masterData.classes
       );
 
@@ -24289,9 +24517,6 @@ const ExaminationModule = ({
   };
 
   const handleSaveMarks = async (scheduleId: string, studentId: string, studentName: string) => {
-    const data = marksForm[`${scheduleId}_${studentId}`] || {};
-    if (data.marks === undefined) return;
-
     const schedule = examSchedules.find((s: any) => s.id === scheduleId);
     if (!schedule) return;
     const examName = schedule.examId; 
@@ -24301,15 +24526,32 @@ const ExaminationModule = ({
                        ((exams || []).find((e: any) => e.id === schedule.examId)?.type?.includes('Half') || 
                         (exams || []).find((e: any) => e.id === schedule.examId)?.type?.includes('Annual')) ? 80 : 100;
 
+    const result = (examResults || []).find((r: any) => 
+      (r.examScheduleId === scheduleId || (r.examName === examName && r.subject === schedule.subject)) && 
+      r.studentId === studentId
+    );
+
+    const currentFormData = marksForm[`${scheduleId}_${studentId}`] || {};
+    
+    // Fallback to existing database result if form field is empty/untouched
+    const marksVal = currentFormData.marks !== undefined ? currentFormData.marks : (result?.marks !== undefined ? result?.marks : (result?.marksObtained !== undefined ? result?.marksObtained : ''));
+    const maxMarksVal = currentFormData.maxMarks !== undefined ? currentFormData.maxMarks : (result?.maxMarks !== undefined ? result?.maxMarks : defaultMax);
+    const feedbackVal = currentFormData.feedback !== undefined ? currentFormData.feedback : (result?.feedback !== undefined ? result?.feedback : '');
+
+    if (marksVal === '') {
+      alert('Please enter Obtained Marks.');
+      return;
+    }
+
     try {
       const payload = {
         exam_name: examName,
         exam_type: (exams || []).find((e: any) => e.id === schedule.examId)?.type || 'Main',
         student_id: studentId,
         subject: schedule.subject,
-        marks_obtained: Number(data.marks),
-        max_marks: Number(data.maxMarks || defaultMax),
-        feedback: data.feedback || ''
+        marks_obtained: Number(marksVal),
+        max_marks: Number(maxMarksVal),
+        feedback: feedbackVal || ''
       };
 
       const existingIdx = examResults.findIndex((r: any) => 
@@ -24330,8 +24572,10 @@ const ExaminationModule = ({
         updated[existingIdx] = { 
           ...examResults[existingIdx], 
           ...payload, 
+          marks: payload.marks_obtained,
           marksObtained: payload.marks_obtained,
-          maxMarks: payload.max_marks
+          maxMarks: payload.max_marks,
+          feedback: payload.feedback
         };
         setExamResults(updated);
       } else {
@@ -24346,15 +24590,19 @@ const ExaminationModule = ({
             examName: inserted[0].exam_name,
             studentId: inserted[0].student_id,
             subject: inserted[0].subject,
+            marks: inserted[0].marks_obtained,
             marksObtained: inserted[0].marks_obtained,
             maxMarks: inserted[0].max_marks,
+            feedback: inserted[0].feedback,
             examScheduleId: scheduleId // Map back for local UI
           };
           setExamResults([...examResults, newResult]);
         }
       }
+      alert(`Marks for ${studentName} saved successfully!`);
     } catch (err) {
       console.error('Error saving marks:', err);
+      alert('Error saving marks: ' + (err as any).message);
     }
   };
 
@@ -24698,7 +24946,10 @@ const ExaminationModule = ({
                           </thead>
                           <tbody className="text-sm">
                             {(students || []).filter((st: any) => st.class === s.class && st.section === s.section).map((student: any) => {
-                              const result = (examResults || []).find((r: any) => r.examScheduleId === s.id && r.studentId === student.studentId);
+                              const result = (examResults || []).find((r: any) => 
+                                (r.examScheduleId === s.id || (r.examName === s.examId && r.subject === s.subject)) && 
+                                r.studentId === student.studentId
+                              );
                               
                               const defaultMax = (exams || []).find((e: any) => e.id === s.examId)?.type?.includes('PT') ? '20' : 
                                                ((exams || []).find((e: any) => e.id === s.examId)?.type?.includes('Half') || 
