@@ -2036,7 +2036,7 @@ const Dashboard = ({
                       <span className="text-[10px] font-black uppercase tracking-widest">Leave Approval</span>
                     </button>
                   )}
-                  {(isSuperAdmin || isAdmin) && (
+                  {(isSuperAdmin || isAdmin || currentUser?.role === 'warden') && (
                     <button onClick={() => setView('hostel')} className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 hover:bg-primary hover:text-white transition-all group text-center">
                       <div className="p-3 bg-white rounded-xl shadow-sm group-hover:bg-white/20">
                         <UserCheck2 size={24} className="text-primary group-hover:text-white" />
@@ -5699,6 +5699,7 @@ const FeeManagement = ({
 }: any) => {
   const isAccountant = currentUser?.role === 'accountant';
   const [activeTab, setActiveTab] = useState<'collect' | 'master' | 'reports' | 'ledger' | 'bank-cash' | 'adjustment-logs'>('collect');
+  const [isFeeCollecting, setIsFeeCollecting] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedLedgerStudent, setSelectedLedgerStudent] = useState<Student | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toLocaleString('default', { month: 'long' }));
@@ -6144,6 +6145,8 @@ const FeeManagement = ({
   };
 
   const handleCollectFee = async () => {
+    if (isFeeCollecting) return;
+
     if (!selectedStudent) {
       alert('Please select student');
       return;
@@ -6156,6 +6159,8 @@ const FeeManagement = ({
       alert(`Cannot collect fee for ${selectedMonth} yet. Please clear the pending fee of ₹${unpaidPrevMonth.dueAmount} for ${unpaidPrevMonth.month} first.`);
       return;
     }
+
+    setIsFeeCollecting(true);
 
     const academicYearStartMonth = 'April';
     const quarterlyMonths = ['April', 'July', 'October', 'January'];
@@ -6297,6 +6302,8 @@ const FeeManagement = ({
     } catch (err) {
       console.error('Error collecting fee:', err);
       alert('Error collecting fee');
+    } finally {
+      setIsFeeCollecting(false);
     }
   };
 
@@ -6663,11 +6670,20 @@ const FeeManagement = ({
                   return (
                     <button 
                       onClick={handleCollectFee}
-                      disabled={!!unpaidPrev}
-                      className={`btn-primary px-8 py-3 flex items-center gap-2 ${unpaidPrev ? 'opacity-50 cursor-not-allowed bg-slate-400 hover:bg-slate-400 border-none shadow-none' : ''}`}
+                      disabled={!!unpaidPrev || isFeeCollecting}
+                      className={`btn-primary px-8 py-3 flex items-center gap-2 ${(unpaidPrev || isFeeCollecting) ? 'opacity-50 cursor-not-allowed bg-slate-400 hover:bg-slate-400 border-none shadow-none' : ''}`}
                     >
-                      <Coins size={20} />
-                      Collect & Print
+                      {isFeeCollecting ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                          Collecting...
+                        </>
+                      ) : (
+                        <>
+                          <Coins size={20} />
+                          Collect & Print
+                        </>
+                      )}
                     </button>
                   );
                 })()}
@@ -11762,6 +11778,7 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
   const [showAddStaff, setShowAddStaff] = useState(false);
   const [showBulkStaffModal, setShowBulkStaffModal] = useState(false);
   const [bulkStaffInput, setBulkStaffInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [viewStaff, setViewStaff] = useState<Staff | null>(null);
@@ -11800,10 +11817,41 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
   });
 
   const handleAddStaff = async () => {
+    if (isSaving) return;
+
     if (!newStaff.name || !newStaff.surname || !newStaff.role) {
       alert('Please fill all required fields (Name, Surname, Role)');
       return;
     }
+
+    const trimmedName = (newStaff.name || '').trim();
+    const trimmedSurname = (newStaff.surname || '').trim();
+    const loginId = (newStaff.username || '').trim();
+
+    // Prevent duplicate Login ID (Username)
+    if (!editingStaff && loginId) {
+      const usernameExists = staff.some((s: Staff) => (s.staffId || s.id || '').toLowerCase() === loginId.toLowerCase());
+      if (usernameExists) {
+        alert(`A staff member with the Login ID "${loginId}" already exists. Please choose a different Login ID.`);
+        return;
+      }
+    }
+
+    // Prevent duplicate Name & Surname (exact case-insensitive match)
+    const duplicateStaff = staff.find((s: Staff) => 
+      (s.name || '').trim().toLowerCase() === trimmedName.toLowerCase() &&
+      (s.surname || '').trim().toLowerCase() === trimmedSurname.toLowerCase() &&
+      (!editingStaff || (s.staffId !== editingStaff.staffId && s.id !== editingStaff.id))
+    );
+
+    if (duplicateStaff) {
+      const confirmDuplicate = window.confirm(`A staff member with the name "${trimmedName} ${trimmedSurname}" is already registered (Staff ID: ${duplicateStaff.staffId || duplicateStaff.id}).\n\nAre you sure you want to register another staff member with the exact same name?`);
+      if (!confirmDuplicate) {
+        return;
+      }
+    }
+
+    setIsSaving(true);
     
     try {
       const staffId = editingStaff 
@@ -12072,6 +12120,8 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
     } catch (err: any) {
       console.error('Error saving staff:', err);
       alert(`Error saving staff member: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -12908,9 +12958,28 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
                 </div>
               </div>
 
-              <div className="modal-footer mt-auto border-t border-slate-100 p-6">
-                <button onClick={() => setShowAddStaff(false)} className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all uppercase tracking-widest text-xs">Discard Changes</button>
-                <button onClick={handleAddStaff} className="flex-1 btn-primary py-4 shadow-xl shadow-primary/20 uppercase tracking-widest text-xs">{editingStaff ? 'Update Profile' : 'Register Staff'}</button>
+              <div className="modal-footer mt-auto border-t border-slate-100 p-6 flex gap-4">
+                <button 
+                  onClick={() => setShowAddStaff(false)} 
+                  disabled={isSaving}
+                  className="flex-1 py-4 font-bold text-text-sub hover:bg-slate-50 rounded-2xl transition-all uppercase tracking-widest text-xs disabled:opacity-50"
+                >
+                  Discard Changes
+                </button>
+                <button 
+                  onClick={handleAddStaff} 
+                  disabled={isSaving}
+                  className="flex-1 btn-primary py-4 shadow-xl shadow-primary/20 uppercase tracking-widest text-xs disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isSaving ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      Saving...
+                    </>
+                  ) : (
+                    editingStaff ? 'Update Profile' : 'Register Staff'
+                  )}
+                </button>
               </div>
             </motion.div>
           </div>
@@ -16163,7 +16232,11 @@ const schoolMigrations = `
       setView('dashboard');
     }
 
-    if (isNotAdmin && (view === 'attendance' || view === 'staff-attendance')) {
+    if (isNotAdmin && view === 'staff-attendance') {
+      setView('dashboard');
+    }
+
+    if (isNotAdmin && view === 'attendance' && currentUser?.role !== 'teacher') {
       setView('dashboard');
     }
 
@@ -16180,6 +16253,20 @@ const schoolMigrations = `
         setView('student-panel');
       } else if (currentUser?.role === 'warden') {
         setView('hostel');
+      } else {
+        setView('dashboard');
+      }
+    }
+
+    const isWardenOrAdmin = currentUser?.role === 'admin' || 
+                            currentUser?.role === 'super-admin' || 
+                            currentUser?.role === 'warden';
+
+    if (view === 'hostel' && !isWardenOrAdmin) {
+      if (currentUser?.role === 'teacher') {
+        setView('teacher-panel');
+      } else if (currentUser?.role === 'student' || currentUser?.role === 'parent') {
+        setView('student-panel');
       } else {
         setView('dashboard');
       }
@@ -16341,6 +16428,7 @@ const schoolMigrations = `
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
   const [selectedStudentQR, setSelectedStudentQR] = useState<any>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [isStudentSaving, setIsStudentSaving] = useState(false);
 
   const [bulkStudentInput, setBulkStudentInput] = useState('');
   const [bulkImportMode, setBulkImportMode] = useState<'auto' | 'excel' | 'double' | 'json'>('auto');
@@ -17733,6 +17821,8 @@ const schoolMigrations = `
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isStudentSaving) return;
+
     if (!supabase) {
       showModal('Error', 'Supabase not initialized. Please check your configuration.');
       return;
@@ -17754,6 +17844,8 @@ const schoolMigrations = `
       // But I'll keep a soft warning or just allow it.
       // The user said "Do not make mandatory to upload Documents".
     }
+
+    setIsStudentSaving(true);
 
     try {
             const payload = {
@@ -17973,6 +18065,8 @@ const schoolMigrations = `
     } catch (err: any) {
       console.error('Error saving student:', err);
       showModal('Error', `Failed to save student details: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsStudentSaving(false);
     }
   };
 
@@ -18459,129 +18553,7 @@ const schoolMigrations = `
         </div>
 
         <nav ref={sidebarNavRef} className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar pb-10 relative min-h-0">
-          <SidebarItem 
-            icon={LayoutDashboard} 
-            label={isSidebarOpen ? "Dashboard" : ""} 
-            active={view === 'dashboard'} 
-            onClick={() => setView('dashboard')} 
-            isSidebarOpen={isSidebarOpen}
-          />
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff') && (
-            <>
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
-                <SidebarItem 
-                  icon={BarChart3} 
-                  label={isSidebarOpen ? "Admin 360." : ""} 
-                  active={view === 'admin-360'} 
-                  onClick={() => setView('admin-360')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              <SidebarItem 
-                icon={Users} 
-                label={isSidebarOpen ? "Class 360" : ""} 
-                active={view === 'class-360'} 
-                onClick={() => setView('class-360')} 
-                isSidebarOpen={isSidebarOpen}
-              />
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-                <SidebarItem 
-                  icon={Building2} 
-                  label={isSidebarOpen ? "Front Office" : ""} 
-                  active={view === 'front-office'} 
-                  onClick={() => setView('front-office')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-                <SidebarItem 
-                  icon={UserPlus} 
-                  label={isSidebarOpen ? "Register Student" : ""} 
-                  active={view === 'register-student'} 
-                  onClick={() => {
-                    setEditingStudentId(null);
-                    setIsViewOnly(false);
-                    setFormData({});
-                    setView('register-student');
-                  }} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-                <SidebarItem 
-                  icon={Users} 
-                  label={isSidebarOpen ? "Student List" : ""} 
-                  active={view === 'student-list'} 
-                  onClick={() => setView('student-list')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-                <SidebarItem 
-                  icon={CalendarRange} 
-                  label={isSidebarOpen ? "Leave Management" : ""} 
-                  active={view === 'leave-management'} 
-                  onClick={() => setView('leave-management')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
-                <>
-                  <SidebarItem 
-                    icon={Receipt} 
-                    label={isSidebarOpen ? "Fee Management" : ""} 
-                    active={view === 'fee-management'} 
-                    onClick={() => setView('fee-management')} 
-                    isSidebarOpen={isSidebarOpen}
-                  />
-                  <SidebarItem 
-                    icon={Wallet} 
-                    label={isSidebarOpen ? "Due Fees" : ""} 
-                    active={view === 'due-fees'} 
-                    onClick={() => setView('due-fees')} 
-                    isSidebarOpen={isSidebarOpen}
-                  />
-                  {currentUser?.role !== 'accountant' && (
-                    <SidebarItem 
-                      icon={UserCog} 
-                      label={isSidebarOpen ? "Human Resource" : ""} 
-                      active={view === 'human-resource'} 
-                      onClick={() => setView('human-resource')} 
-                      isSidebarOpen={isSidebarOpen}
-                    />
-                  )}
-                </>
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
-                <SidebarItem 
-                  icon={QrCode} 
-                  label={isSidebarOpen ? "Staff Attendance" : ""} 
-                  active={view === 'staff-attendance'} 
-                  onClick={() => setView('staff-attendance')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
-                <SidebarItem 
-                  icon={MessageCircle} 
-                  label={isSidebarOpen ? "Communication" : ""} 
-                  active={view === 'communicate'} 
-                  onClick={() => setView('communicate')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
-                <SidebarItem 
-                  icon={Coins} 
-                  label={isSidebarOpen ? "Income & Expense" : ""} 
-                  active={view === 'income-expense'} 
-                  onClick={() => setView('income-expense')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
-            </>
-          )}
-          {currentUser?.role === 'teacher' && (
+          {currentUser?.role === 'teacher' ? (
             <>
               <SidebarItem 
                 icon={UserCog} 
@@ -18591,72 +18563,33 @@ const schoolMigrations = `
                 isSidebarOpen={isSidebarOpen}
               />
               <SidebarItem 
+                icon={UserCheck} 
+                label={isSidebarOpen ? "Attendance" : ""} 
+                active={view === 'attendance'} 
+                onClick={() => setView('attendance')} 
+                isSidebarOpen={isSidebarOpen}
+              />
+              <SidebarItem 
                 icon={ClipboardList} 
                 label={isSidebarOpen ? "Examination" : ""} 
                 active={view === 'examination'} 
                 onClick={() => setView('examination')} 
                 isSidebarOpen={isSidebarOpen}
               />
-            </>
-          )}
-          {(currentUser?.role === 'parent' || currentUser?.role === 'student') && (
-            <SidebarItem 
-              icon={Users} 
-              label={isSidebarOpen ? "Student Panel" : ""} 
-              active={view === 'student-panel'} 
-              onClick={() => setView('student-panel')} 
-              isSidebarOpen={isSidebarOpen}
-            />
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-            <SidebarItem 
-              icon={BookOpen} 
-              label={isSidebarOpen ? "Academics" : ""} 
-              active={view === 'academics'} 
-              onClick={() => setView('academics')} 
-              isSidebarOpen={isSidebarOpen}
-            />
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
-            <SidebarItem 
-              icon={UserCheck} 
-              label={isSidebarOpen ? "Attendance" : ""} 
-              active={view === 'attendance'} 
-              onClick={() => setView('attendance')} 
-              isSidebarOpen={isSidebarOpen}
-            />
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-            <SidebarItem 
-              icon={ClipboardList} 
-              label={isSidebarOpen ? "Examination" : ""} 
-              active={view === 'examination'} 
-              onClick={() => setView('examination')} 
-              isSidebarOpen={isSidebarOpen}
-            />
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office') && (
-            <>
               <SidebarItem 
-                icon={UserPlus} 
-                label={isSidebarOpen ? "ID Card & Cert" : ""} 
-                active={view === 'id-cards'} 
-                onClick={() => setView('id-cards')} 
+                icon={Users} 
+                label={isSidebarOpen ? "Student List" : ""} 
+                active={view === 'student-list'} 
+                onClick={() => setView('student-list')} 
                 isSidebarOpen={isSidebarOpen}
               />
-            </>
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'warden' || currentUser?.role === 'staff') && (
-            <SidebarItem 
-              icon={Home} 
-              label={isSidebarOpen ? "Hostel" : ""} 
-              active={view === 'hostel'} 
-              onClick={() => setView('hostel')} 
-              isSidebarOpen={isSidebarOpen}
-            />
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
-            <>
+              <SidebarItem 
+                icon={BookOpen} 
+                label={isSidebarOpen ? "Academics" : ""} 
+                active={view === 'academics'} 
+                onClick={() => setView('academics')} 
+                isSidebarOpen={isSidebarOpen}
+              />
               <SidebarItem 
                 icon={Calendar} 
                 label={isSidebarOpen ? "Calendar" : ""} 
@@ -18665,62 +18598,254 @@ const schoolMigrations = `
                 isSidebarOpen={isSidebarOpen}
               />
             </>
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
-            <SidebarItem 
-              icon={BarChart3} 
-              label={isSidebarOpen ? "Reports" : ""} 
-              active={view === 'reports'} 
-              onClick={() => setView('reports')} 
-              isSidebarOpen={isSidebarOpen}
-            />
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+          ) : (
             <>
               <SidebarItem 
-                icon={ShieldCheck} 
-                label={isSidebarOpen ? "User Logs" : ""} 
-                active={view === 'user-logs'} 
-                onClick={() => setView('user-logs')} 
+                icon={LayoutDashboard} 
+                label={isSidebarOpen ? "Dashboard" : ""} 
+                active={view === 'dashboard'} 
+                onClick={() => setView('dashboard')} 
                 isSidebarOpen={isSidebarOpen}
               />
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                <>
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+                    <SidebarItem 
+                      icon={BarChart3} 
+                      label={isSidebarOpen ? "Admin 360." : ""} 
+                      active={view === 'admin-360'} 
+                      onClick={() => setView('admin-360')} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                  <SidebarItem 
+                    icon={Users} 
+                    label={isSidebarOpen ? "Class 360" : ""} 
+                    active={view === 'class-360'} 
+                    onClick={() => setView('class-360')} 
+                    isSidebarOpen={isSidebarOpen}
+                  />
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                    <SidebarItem 
+                      icon={Building2} 
+                      label={isSidebarOpen ? "Front Office" : ""} 
+                      active={view === 'front-office'} 
+                      onClick={() => setView('front-office')} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                    <SidebarItem 
+                      icon={UserPlus} 
+                      label={isSidebarOpen ? "Register Student" : ""} 
+                      active={view === 'register-student'} 
+                      onClick={() => {
+                        setEditingStudentId(null);
+                        setIsViewOnly(false);
+                        setFormData({});
+                        setView('register-student');
+                      }} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                    <SidebarItem 
+                      icon={Users} 
+                      label={isSidebarOpen ? "Student List" : ""} 
+                      active={view === 'student-list'} 
+                      onClick={() => setView('student-list')} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                    <SidebarItem 
+                      icon={CalendarRange} 
+                      label={isSidebarOpen ? "Leave Management" : ""} 
+                      active={view === 'leave-management'} 
+                      onClick={() => setView('leave-management')} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
+                    <>
+                      <SidebarItem 
+                        icon={Receipt} 
+                        label={isSidebarOpen ? "Fee Management" : ""} 
+                        active={view === 'fee-management'} 
+                        onClick={() => setView('fee-management')} 
+                        isSidebarOpen={isSidebarOpen}
+                      />
+                      <SidebarItem 
+                        icon={Wallet} 
+                        label={isSidebarOpen ? "Due Fees" : ""} 
+                        active={view === 'due-fees'} 
+                        onClick={() => setView('due-fees')} 
+                        isSidebarOpen={isSidebarOpen}
+                      />
+                      {currentUser?.role !== 'accountant' && (
+                        <SidebarItem 
+                          icon={UserCog} 
+                          label={isSidebarOpen ? "Human Resource" : ""} 
+                          active={view === 'human-resource'} 
+                          onClick={() => setView('human-resource')} 
+                          isSidebarOpen={isSidebarOpen}
+                        />
+                      )}
+                    </>
+                  )}
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+                    <SidebarItem 
+                      icon={QrCode} 
+                      label={isSidebarOpen ? "Staff Attendance" : ""} 
+                      active={view === 'staff-attendance'} 
+                      onClick={() => setView('staff-attendance')} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
+                    <SidebarItem 
+                      icon={MessageCircle} 
+                      label={isSidebarOpen ? "Communication" : ""} 
+                      active={view === 'communicate'} 
+                      onClick={() => setView('communicate')} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
+                    <SidebarItem 
+                      icon={Coins} 
+                      label={isSidebarOpen ? "Income & Expense" : ""} 
+                      active={view === 'income-expense'} 
+                      onClick={() => setView('income-expense')} 
+                      isSidebarOpen={isSidebarOpen}
+                    />
+                  )}
+                </>
+              )}
+              {(currentUser?.role === 'parent' || currentUser?.role === 'student') && (
+                <SidebarItem 
+                  icon={Users} 
+                  label={isSidebarOpen ? "Student Panel" : ""} 
+                  active={view === 'student-panel'} 
+                  onClick={() => setView('student-panel')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                <SidebarItem 
+                  icon={BookOpen} 
+                  label={isSidebarOpen ? "Academics" : ""} 
+                  active={view === 'academics'} 
+                  onClick={() => setView('academics')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+                <SidebarItem 
+                  icon={UserCheck} 
+                  label={isSidebarOpen ? "Attendance" : ""} 
+                  active={view === 'attendance'} 
+                  onClick={() => setView('attendance')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                <SidebarItem 
+                  icon={ClipboardList} 
+                  label={isSidebarOpen ? "Examination" : ""} 
+                  active={view === 'examination'} 
+                  onClick={() => setView('examination')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office') && (
+                <>
+                  <SidebarItem 
+                    icon={UserPlus} 
+                    label={isSidebarOpen ? "ID Card & Cert" : ""} 
+                    active={view === 'id-cards'} 
+                    onClick={() => setView('id-cards')} 
+                    isSidebarOpen={isSidebarOpen}
+                  />
+                </>
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'warden') && (
+                <SidebarItem 
+                  icon={Home} 
+                  label={isSidebarOpen ? "Hostel" : ""} 
+                  active={view === 'hostel'} 
+                  onClick={() => setView('hostel')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
+                <>
+                  <SidebarItem 
+                    icon={Calendar} 
+                    label={isSidebarOpen ? "Calendar" : ""} 
+                    active={view === 'calendar'} 
+                    onClick={() => setView('calendar')} 
+                    isSidebarOpen={isSidebarOpen}
+                  />
+                </>
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'accountant') && (
+                <SidebarItem 
+                  icon={BarChart3} 
+                  label={isSidebarOpen ? "Reports" : ""} 
+                  active={view === 'reports'} 
+                  onClick={() => setView('reports')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+                <>
+                  <SidebarItem 
+                    icon={ShieldCheck} 
+                    label={isSidebarOpen ? "User Logs" : ""} 
+                    active={view === 'user-logs'} 
+                    onClick={() => setView('user-logs')} 
+                    isSidebarOpen={isSidebarOpen}
+                  />
+                </>
+              )}
+              {currentUser?.role === 'student' && (
+                <SidebarItem 
+                  icon={Wallet} 
+                  label={isSidebarOpen ? "My Due Fees" : ""} 
+                  active={view === 'due-fees'} 
+                  onClick={() => setView('due-fees')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
+              {currentUser?.role === 'super-admin' && (
+                <>
+                  <SidebarItem 
+                    icon={ShieldCheck} 
+                    label={isSidebarOpen ? "Super Admin Panel" : ""} 
+                    active={view === 'super-admin-panel'} 
+                    onClick={() => setView('super-admin-panel')} 
+                    isSidebarOpen={isSidebarOpen}
+                  />
+                  <SidebarItem 
+                    icon={Database} 
+                    label={isSidebarOpen ? "SQL Editor" : ""} 
+                    active={view === 'sql-editor'} 
+                    onClick={() => setView('sql-editor')} 
+                    isSidebarOpen={isSidebarOpen}
+                  />
+                </>
+              )}
+              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+                <SidebarItem 
+                  icon={Settings} 
+                  label={isSidebarOpen ? "Settings" : ""} 
+                  active={view === 'settings'} 
+                  onClick={() => setView('settings')} 
+                  isSidebarOpen={isSidebarOpen}
+                />
+              )}
             </>
-          )}
-          {currentUser?.role === 'student' && (
-            <SidebarItem 
-              icon={Wallet} 
-              label={isSidebarOpen ? "My Due Fees" : ""} 
-              active={view === 'due-fees'} 
-              onClick={() => setView('due-fees')} 
-              isSidebarOpen={isSidebarOpen}
-            />
-          )}
-          {currentUser?.role === 'super-admin' && (
-            <>
-              <SidebarItem 
-                icon={ShieldCheck} 
-                label={isSidebarOpen ? "Super Admin Panel" : ""} 
-                active={view === 'super-admin-panel'} 
-                onClick={() => setView('super-admin-panel')} 
-                isSidebarOpen={isSidebarOpen}
-              />
-              <SidebarItem 
-                icon={Database} 
-                label={isSidebarOpen ? "SQL Editor" : ""} 
-                active={view === 'sql-editor'} 
-                onClick={() => setView('sql-editor')} 
-                isSidebarOpen={isSidebarOpen}
-              />
-            </>
-          )}
-          {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
-            <SidebarItem 
-              icon={Settings} 
-              label={isSidebarOpen ? "Settings" : ""} 
-              active={view === 'settings'} 
-              onClick={() => setView('settings')} 
-              isSidebarOpen={isSidebarOpen}
-            />
           )}
           
           <div className="mt-auto p-4 text-center border-t border-slate-100">
@@ -19661,8 +19786,19 @@ const schoolMigrations = `
                       {isViewOnly ? 'Back to List' : 'Cancel'}
                     </button>
                     {!isViewOnly && (
-                      <button type="submit" className="btn-primary">
-                        {editingStudentId ? 'Update Student' : 'Register Student'}
+                      <button 
+                        type="submit" 
+                        disabled={isStudentSaving} 
+                        className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isStudentSaving ? (
+                          <>
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            {editingStudentId ? 'Updating...' : 'Registering...'}
+                          </>
+                        ) : (
+                          editingStudentId ? 'Update Student' : 'Register Student'
+                        )}
                       </button>
                     )}
                   </div>
@@ -20955,8 +21091,8 @@ const schoolMigrations = `
       {/* Mobile Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around p-2 z-[100] md:hidden">
         <button 
-          onClick={() => setView('dashboard')}
-          className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${view === 'dashboard' ? 'text-primary' : 'text-slate-400'}`}
+          onClick={() => setView(currentUser?.role === 'teacher' ? 'teacher-panel' : 'dashboard')}
+          className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${(view === 'dashboard' || view === 'teacher-panel') ? 'text-primary' : 'text-slate-400'}`}
         >
           <LayoutDashboard size={20} />
           <span className="text-[10px] font-bold uppercase">Home</span>
@@ -20968,7 +21104,7 @@ const schoolMigrations = `
           <BookOpen size={20} />
           <span className="text-[10px] font-bold uppercase">Study</span>
         </button>
-        {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+        {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher') && (
           <button 
             onClick={() => setView('attendance')}
             className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${view === 'attendance' ? 'text-primary' : 'text-slate-400'}`}
