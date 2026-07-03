@@ -22611,8 +22611,8 @@ const IDCardsModule = ({
           { label: 'CONTACT NO.', value: person.fatherMobile || person.mobile || person.phone || person.contactNumber || 'N/A' },
         ];
 
-    const headerHeight = orientation === 'portrait' ? 'h-[155px]' : 'h-[95px]';
-    const headerPt = orientation === 'portrait' ? 'pt-6' : 'pt-3';
+    const headerHeight = orientation === 'portrait' ? 'h-[132px]' : 'h-[95px]';
+    const headerPt = orientation === 'portrait' ? 'pt-4' : 'pt-3';
 
     const fullName = `${person.name || ''} ${person.surname || ''}`.trim();
     let nameFontSize = 'text-[14px]';
@@ -22622,7 +22622,7 @@ const IDCardsModule = ({
       nameFontSize = 'text-[12.5px]';
     }
 
-    const bodyPtClass = orientation === 'portrait' ? 'pt-7' : 'pt-6';
+    const bodyPtClass = orientation === 'portrait' ? 'pt-5' : 'pt-4';
     const bodyPbClass = orientation === 'portrait' ? 'pb-3' : 'pb-2.5';
 
     return (
@@ -22660,8 +22660,8 @@ const IDCardsModule = ({
               </div>
 
               {/* QR Code Centered in Upper Middle */}
-              <div className="bg-white p-1 rounded-lg z-20 border border-slate-200/60 flex items-center justify-center shrink-0 mt-1" style={{ width: '56px', height: '56px' }}>
-                  <QRCode value={idValue} size={48} level="M" style={{ width: '48px', height: '48px' }} />
+              <div className="bg-white p-1 rounded-lg z-20 border border-slate-200/50 flex items-center justify-center shrink-0 mt-1 shadow-sm" style={{ width: '48px', height: '48px' }}>
+                  <QRCode value={idValue} size={40} level="M" style={{ width: '40px', height: '40px' }} />
               </div>
 
               {/* Identity Card Label Pill */}
@@ -22704,11 +22704,18 @@ const IDCardsModule = ({
         )}
 
         {/* Main Body - Redesigned for Complete Visibility without any overlap */}
-        <div className={`flex-1 bg-white pl-6 pr-4 ${bodyPbClass} ${bodyPtClass} flex flex-col min-w-0`}>
-            <div className="flex gap-4 items-stretch mb-2">
+        <div className={`flex-1 bg-white pl-6 pr-4 ${bodyPbClass} ${bodyPtClass} flex flex-col min-w-0 relative overflow-hidden`}>
+            {/* Subtle Security Watermark Logo in center-right background */}
+            {schoolProfile?.logo && (
+              <div className="absolute inset-0 flex items-center justify-center opacity-[0.035] pointer-events-none z-0">
+                <img src={getProxyImageUrl(schoolProfile.logo)} crossOrigin="anonymous" alt="" className="w-40 h-40 object-contain filter grayscale" referrerPolicy="no-referrer" />
+              </div>
+            )}
+
+            <div className="flex gap-4 items-stretch mb-2 z-10 relative">
                 {/* Photo Section & Quick Identifiers */}
                 <div className="shrink-0 flex flex-col items-center gap-1 w-24">
-                    <div className="w-24 h-28 border-2 border-slate-100 p-1 bg-white shadow-md rounded-xl overflow-hidden">
+                    <div className="w-24 h-[120px] border-2 border-slate-100 p-1 bg-white shadow-md rounded-xl overflow-hidden">
                         <div className="w-full h-full bg-slate-50 flex items-center justify-center overflow-hidden rounded-lg">
                             {person.photo ? (
                                 <img src={getProxyImageUrl(person.photo)} crossOrigin="anonymous" alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" style={{ imageRendering: 'auto', objectFit: 'cover' }} />
@@ -22716,7 +22723,7 @@ const IDCardsModule = ({
                                 <div className="flex flex-col items-center gap-1 opacity-20">
                                   <User size={32} className="text-slate-400" />
                                   <span className="text-[10px] font-black uppercase text-slate-400">Photo</span>
-                                  </div>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -22725,45 +22732,46 @@ const IDCardsModule = ({
                       <div className={`flex flex-col items-center text-center mt-1 w-full ${orientation === 'portrait' ? 'gap-1' : 'gap-0.5'}`}>
                         {orientation === 'portrait' ? (
                           <>
-                            <div className="flex flex-col w-full text-center">
-                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">CLASS / SECTION</span>
-                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
-                                {person.class || 'N/A'} - {person.section || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="flex flex-col w-full text-center mt-0.5">
-                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">ROLLNO</span>
-                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
-                                {person.rollNumber || person.rollNo || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="mt-1.5 bg-white border border-slate-200 shadow-sm py-0.5 px-2 rounded-full inline-flex items-center gap-1 self-center">
-                              <div className="w-3.5 h-3.5 bg-red-500 rounded-full flex items-center justify-center shrink-0">
-                                <Droplet size={8} fill="white" className="text-white" />
-                              </div>
-                              <span className="text-[8.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'B+'}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex flex-col w-full gap-1 mt-1">
-                            <div className="grid grid-cols-2 gap-1 w-full">
-                              <div className="flex flex-col text-center">
-                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">CLASS</span>
-                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
-                                  {person.class || 'N/A'}
+                            <div className="w-full bg-slate-50/70 rounded-xl p-1.5 border border-slate-100/90 flex flex-col gap-1 mt-1">
+                              <div className="flex flex-col text-left px-0.5">
+                                <span className="font-bold text-slate-400 uppercase tracking-wider text-[5.5px] leading-none mb-0.5">CLASS / SEC</span>
+                                <span className="font-extrabold text-slate-800 text-[9px] truncate leading-none">
+                                  {person.class || 'N/A'} - {person.section || 'N/A'}
                                 </span>
                               </div>
-                              <div className="flex flex-col text-center">
-                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">ROLL</span>
-                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
+                              <div className="h-px bg-slate-100/85 w-full" />
+                              <div className="flex flex-col text-left px-0.5">
+                                <span className="font-bold text-slate-400 uppercase tracking-wider text-[5.5px] leading-none mb-0.5">ROLL NO</span>
+                                <span className="font-extrabold text-slate-800 text-[9px] truncate leading-none">
                                   {person.rollNumber || person.rollNo || 'N/A'}
                                 </span>
                               </div>
                             </div>
-                            <div className="bg-white border border-slate-200 shadow-sm py-0.5 px-1.5 rounded-full inline-flex items-center gap-1 self-center">
+                            <div className="mt-1.5 bg-red-50 border border-red-100/60 shadow-sm py-1 px-2.5 rounded-full inline-flex items-center gap-1 self-center">
                               <div className="w-3 h-3 bg-red-500 rounded-full flex items-center justify-center shrink-0">
-                                <Droplet size={7} fill="white" className="text-white" />
+                                <Droplet size={8} fill="white" className="text-white" />
                               </div>
+                              <span className="text-[8.5px] font-black text-red-700 leading-none">{person.bloodGroup || 'B+'}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex justify-between items-center w-full gap-1 mt-1 bg-slate-50/70 p-1 border border-slate-100 rounded-lg">
+                            <div className="flex flex-col text-center shrink-0 min-w-0">
+                              <span className="font-bold text-slate-400 uppercase tracking-wider text-[5px] leading-none mb-0.5">CLASS</span>
+                              <span className="font-extrabold text-slate-800 text-[7.5px] truncate leading-none">
+                                {person.class || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="w-px h-3.5 bg-slate-200" />
+                            <div className="flex flex-col text-center shrink-0 min-w-0">
+                              <span className="font-bold text-slate-400 uppercase tracking-wider text-[5px] leading-none mb-0.5">ROLL</span>
+                              <span className="font-extrabold text-slate-800 text-[7.5px] truncate leading-none">
+                                {person.rollNumber || person.rollNo || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="w-px h-3.5 bg-slate-200" />
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <Droplet size={6} fill="red" className="text-red-500 shrink-0" />
                               <span className="text-[7.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'B+'}</span>
                             </div>
                           </div>
@@ -22773,45 +22781,46 @@ const IDCardsModule = ({
                       <div className={`flex flex-col items-center text-center mt-1 w-full ${orientation === 'portrait' ? 'gap-1' : 'gap-0.5'}`}>
                         {orientation === 'portrait' ? (
                           <>
-                            <div className="flex flex-col w-full text-center">
-                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">DESIGNATION</span>
-                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
-                                {person.designation || 'Teacher'}
-                              </span>
-                            </div>
-                            <div className="flex flex-col w-full text-center mt-0.5">
-                              <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] leading-none mb-0.5">STAFF ID</span>
-                              <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-1.5 py-1 rounded-lg border border-[#e2e8f0] text-[9px] mt-0.5 shadow-sm block text-center truncate leading-none">
-                                {person.staffId || person.id || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="mt-1.5 bg-white border border-slate-200 shadow-sm py-0.5 px-2 rounded-full inline-flex items-center gap-1 self-center">
-                              <div className="w-3.5 h-3.5 bg-red-500 rounded-full flex items-center justify-center shrink-0">
-                                <Droplet size={8} fill="white" className="text-white" />
-                              </div>
-                              <span className="text-[8.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'N/A'}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex flex-col w-full gap-1 mt-1">
-                            <div className="grid grid-cols-2 gap-1 w-full">
-                              <div className="flex flex-col text-center">
-                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">DESIG.</span>
-                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
+                            <div className="w-full bg-slate-50/70 rounded-xl p-1.5 border border-slate-100/90 flex flex-col gap-1 mt-1">
+                              <div className="flex flex-col text-left px-0.5">
+                                <span className="font-bold text-slate-400 uppercase tracking-wider text-[5.5px] leading-none mb-0.5">DESIGNATION</span>
+                                <span className="font-extrabold text-slate-800 text-[9px] truncate leading-none">
                                   {person.designation || 'Teacher'}
                                 </span>
                               </div>
-                              <div className="flex flex-col text-center">
-                                <span className="font-black text-[#64748b] uppercase tracking-wider text-[5.5px] leading-none mb-0.5">STAFF ID</span>
-                                <span className="font-extrabold text-slate-800 uppercase bg-[#f4f7fb] py-0.5 rounded-md border border-[#e2e8f0] text-[8px] shadow-sm block text-center truncate leading-none">
+                              <div className="h-px bg-slate-100/85 w-full" />
+                              <div className="flex flex-col text-left px-0.5">
+                                <span className="font-bold text-slate-400 uppercase tracking-wider text-[5.5px] leading-none mb-0.5">STAFF ID</span>
+                                <span className="font-extrabold text-slate-800 text-[9px] truncate leading-none">
                                   {person.staffId || person.id || 'N/A'}
                                 </span>
                               </div>
                             </div>
-                            <div className="bg-white border border-slate-200 shadow-sm py-0.5 px-1.5 rounded-full inline-flex items-center gap-1 self-center">
+                            <div className="mt-1.5 bg-red-50 border border-red-100/60 shadow-sm py-1 px-2.5 rounded-full inline-flex items-center gap-1 self-center">
                               <div className="w-3 h-3 bg-red-500 rounded-full flex items-center justify-center shrink-0">
-                                <Droplet size={7} fill="white" className="text-white" />
+                                <Droplet size={8} fill="white" className="text-white" />
                               </div>
+                              <span className="text-[8.5px] font-black text-red-700 leading-none">{person.bloodGroup || 'N/A'}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex justify-between items-center w-full gap-1 mt-1 bg-slate-50/70 p-1 border border-slate-100 rounded-lg">
+                            <div className="flex flex-col text-center shrink-0 min-w-0">
+                              <span className="font-bold text-slate-400 uppercase tracking-wider text-[5px] leading-none mb-0.5">DESIG.</span>
+                              <span className="font-extrabold text-slate-800 text-[7.5px] truncate leading-none">
+                                {person.designation || 'Teacher'}
+                              </span>
+                            </div>
+                            <div className="w-px h-3.5 bg-slate-200" />
+                            <div className="flex flex-col text-center shrink-0 min-w-0">
+                              <span className="font-bold text-slate-400 uppercase tracking-wider text-[5px] leading-none mb-0.5">STAFF ID</span>
+                              <span className="font-extrabold text-slate-800 text-[7.5px] truncate leading-none">
+                                {person.staffId || person.id || 'N/A'}
+                              </span>
+                            </div>
+                            <div className="w-px h-3.5 bg-slate-200" />
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <Droplet size={6} fill="red" className="text-red-500 shrink-0" />
                               <span className="text-[7.5px] font-black text-slate-800 leading-none">{person.bloodGroup || 'N/A'}</span>
                             </div>
                           </div>
@@ -22830,11 +22839,11 @@ const IDCardsModule = ({
                     </div>
                     
                     {orientation === 'portrait' ? (
-                      <div className="space-y-1 flex-1 mt-1">
+                      <div className="space-y-2 flex-1 mt-1">
                           {rightDetails.map((item, idx) => (
                               <div key={idx} className="block text-[8.5px] leading-tight min-w-0 w-full">
-                                  <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] mb-0.5 block leading-none">{item.label}</span>
-                                  <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1 rounded-lg border border-[#e2e8f0] text-[8px] leading-none block min-w-0 w-full ${item.label === 'ADDRESS' ? 'line-clamp-2 h-[26px] whitespace-normal leading-tight py-0.5' : 'truncate'}`}>
+                                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[6.5px] mb-0.5 block leading-none">{item.label}</span>
+                                  <span className={`font-extrabold text-slate-800 uppercase bg-slate-50/70 px-2 py-1.5 rounded-lg border border-slate-100 text-[8.5px] leading-tight block min-w-0 w-full ${item.label === 'ADDRESS' ? 'line-clamp-2 h-[34px] whitespace-normal leading-normal py-1' : 'truncate'}`}>
                                     {item.value}
                                   </span>
                               </div>
@@ -22846,8 +22855,8 @@ const IDCardsModule = ({
                               const isFullWidth = item.label === 'ADDRESS';
                               return (
                                   <div key={idx} className={`block text-[8.5px] leading-tight min-w-0 ${isFullWidth ? 'col-span-2' : ''}`}>
-                                      <span className="font-black text-[#64748b] uppercase tracking-wider text-[6px] mb-0.5 block leading-none">{item.label}</span>
-                                      <span className={`font-extrabold text-slate-800 uppercase bg-[#f4f7fb] px-2 py-1 rounded-lg border border-[#e2e8f0] text-[8px] leading-none block min-w-0 w-full ${isFullWidth ? 'line-clamp-1 truncate' : 'truncate'}`}>
+                                      <span className="font-bold text-slate-400 uppercase tracking-wider text-[5.5px] mb-0.5 block leading-none">{item.label}</span>
+                                      <span className={`font-extrabold text-slate-800 uppercase bg-slate-50/70 px-2 py-1 rounded-lg border border-slate-100 text-[7.5px] leading-none block min-w-0 w-full ${isFullWidth ? 'line-clamp-1 truncate' : 'truncate'}`}>
                                         {item.value}
                                       </span>
                                   </div>
@@ -22859,7 +22868,7 @@ const IDCardsModule = ({
             </div>
 
             {/* Principal Signature & Branding */}
-            <div className="mt-auto pt-2 flex justify-between items-center border-t border-slate-100">
+            <div className="mt-auto pt-2 flex justify-between items-center border-t border-slate-100 z-10 relative">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-white rounded-lg p-0.5 border border-slate-200 shadow-sm flex items-center justify-center overflow-hidden">
                      <img src={getProxyImageUrl(schoolProfile?.logo)} crossOrigin="anonymous" alt="" className="w-full h-full object-contain" style={{ imageRendering: 'auto', objectFit: 'contain' }} />
