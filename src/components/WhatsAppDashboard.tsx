@@ -27,7 +27,8 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
       setConnection(data);
       return data;
     } catch (e) {
-      console.error("[WhatsApp REST] Poll status failed:", e);
+      // Quietly handle transient network/startup fetch failures
+      console.debug("[WhatsApp REST] Poll status skipped (server starting or transient network down):", e);
       return null;
     }
   };

@@ -85,13 +85,19 @@ async function initDatabase() {
     } else {
       console.log("[WhatsApp DB Init] Database migrations/alterations completed successfully.");
     }
+    // Always trigger a reload of PostgREST schema cache to make sure the tables are accessible immediately
+    try {
+      await supabase.rpc('exec_sql', { sql_query: "NOTIFY pgrst, 'reload schema';" });
+    } catch (e: any) {
+      console.warn("[WhatsApp DB Init] Failed to notify schema reload:", e.message);
+    }
   } catch (err: any) {
     console.error("[WhatsApp DB Init] Database initialization failed:", err.message);
   }
 }
 
-// Update status in the database
-async function updateDBSessionStatus(status: string, phone: string, qr: string) {
+// Update status in the database with auto-retry on schema cache mismatch
+async function updateDBSessionStatus(status: string, phone: string, qr: string, retryCount = 2): Promise<void> {
   if (!supabase) return;
   try {
     const { error } = await supabase
@@ -104,7 +110,20 @@ async function updateDBSessionStatus(status: string, phone: string, qr: string) 
         last_sync: new Date().toISOString(),
         last_connected: new Date().toISOString()
       }, { onConflict: "session_name" });
-    if (error) console.error("[WhatsApp DB] Error updating session status:", error.message);
+    
+    if (error) {
+      console.error("[WhatsApp DB] Error updating session status:", error.message);
+      if (retryCount > 0 && (error.message.includes("schema cache") || error.message.includes("Could not find the table"))) {
+        console.log("[WhatsApp DB] Schema cache issue detected. Attempting to reload PostgREST schema cache and retry...");
+        try {
+          await supabase.rpc('exec_sql', { sql_query: "NOTIFY pgrst, 'reload schema';" });
+          await new Promise(resolve => setTimeout(resolve, 1000)); // wait 1s for the cache to update
+        } catch (reloadErr: any) {
+          console.error("[WhatsApp DB] Failed to run reload notify:", reloadErr.message);
+        }
+        return updateDBSessionStatus(status, phone, qr, retryCount - 1);
+      }
+    }
   } catch (err: any) {
     console.error("[WhatsApp DB] Exception updating session status:", err.message);
   }

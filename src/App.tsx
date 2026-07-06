@@ -1967,7 +1967,7 @@ const Dashboard = ({
         .then(data => {
           setWaConnectedCount(data.status === "Connected");
         })
-        .catch(e => console.error("Error checking WA status:", e));
+        .catch(e => console.debug("Transient WA status fetch skipped:", e));
     }
   }, [isAdmin, isSuperAdmin]);
 
@@ -14328,7 +14328,7 @@ const CommunicatePanel = ({ notifications, setNotifications, notices, setNotices
         const data = await res.json();
         setIsWhatsAppConnected(data.status === "Connected");
       } catch (e) {
-        console.error("[CommunicatePanel] WhatsApp status check failed:", e);
+        console.debug("[CommunicatePanel] WhatsApp status check skipped (offline or booting):", e);
       }
     };
     checkStatus();
