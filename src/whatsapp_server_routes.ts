@@ -1,6 +1,14 @@
 import { Router } from "express";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import makeWASocket, { 
+  DisconnectReason, 
+  useMultiFileAuthState, 
+  fetchLatestBaileysVersion
+} from "@whiskeysockets/baileys";
+import pino from "pino";
+import path from "path";
+import fs from "fs";
 
 dotenv.config();
 
@@ -13,110 +21,77 @@ export const whatsappRouter = Router();
 
 // Connection status cache
 let connectionState = {
-  status: "Disconnected", // "Waiting for QR" | "QR Generated" | "Connecting" | "Connected" | "Disconnected" | "Session Expired"
+  status: "Disconnected", // "Connecting" | "Waiting for QR" | "Connected" | "Disconnected"
   qrCode: "",
   phoneNumber: "",
   lastSync: new Date().toISOString(),
-  mode: "Real", // "Simulator" | "Real"
+  mode: "Real",
   error: null as string | null
 };
 
-// Log templates or campaigns
-let whatsappClient: any = null;
+let sock: any = null;
 
-/**
- * PERSISTENT LOGIN MECHANISM EXPLAINED:
- * 
- * To prevent scanning the QR code every time the application starts or the browser is refreshed:
- * 1. We use whatsapp-web.js's native `LocalAuth` session strategy.
- * 2. The `LocalAuth` client stores session metadata, cookies, and local tokens in a dedicated file directory: `.wwebjs_auth/session-school-erp-session`.
- * 3. On application server startup, `initRealWhatsApp()` is fired automatically.
- * 4. The `LocalAuth` constructor automatically detects the previously stored files inside `.wwebjs_auth/`.
- * 5. Instead of generating a new QR Code event, whatsapp-web.js reuse the saved authentication tokens to recreate the session.
- * 6. The "ready" event fires instantly if the session is still valid.
- * 7. If the session has been invalidated (e.g. logged out from mobile phone), "auth_failure" is triggered,
- *    updating state to "Session Expired" and prompting a renewed QR scan.
- */
-async function initRealWhatsApp(forceReal: boolean = false) {
-  if (!forceReal && process.env.WHATSAPP_REAL_MODE !== "true") {
-    console.log("[WhatsApp] Running in Sandbox/Simulator Mode specified by WHATSAPP_REAL_MODE.");
-    return false;
-  }
-
-  try {
-    console.log("[WhatsApp] Attempting to load whatsapp-web.js...");
-    // @ts-ignore
-    const { Client, LocalAuth } = await import("whatsapp-web.js");
-    
-    // Configured for running inside Linux/Docker with --no-sandbox to bypass chromium restrictions
-    whatsappClient = new Client({
-      authStrategy: new LocalAuth({
-        clientId: "school-erp-session"
-      }),
-      puppeteer: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--disable-gpu"
-        ]
-      }
-    });
-
-    connectionState.mode = "Real";
-    connectionState.status = "Connecting";
-
-    whatsappClient.on("qr", (qr: string) => {
-      console.log("[WhatsApp] QR Code received:", qr);
-      connectionState.status = "QR Generated";
-      connectionState.qrCode = qr;
-      connectionState.error = null;
-      updateDBSessionStatus("QR Generated", "", qr);
-    });
-
-    whatsappClient.on("ready", () => {
-      const phone = whatsappClient.info.wid.user;
-      console.log("[WhatsApp] Client is ready. Logged in phone:", phone);
-      connectionState.status = "Connected";
-      connectionState.phoneNumber = phone;
-      connectionState.qrCode = "";
-      connectionState.lastSync = new Date().toISOString();
-      connectionState.error = null;
-      updateDBSessionStatus("Connected", phone, "");
-    });
-
-    whatsappClient.on("auth_failure", (msg: string) => {
-      console.error("[WhatsApp] Authentication Failure:", msg);
-      connectionState.status = "Session Expired";
-      connectionState.error = `Authentication session has expired: ${msg}`;
-      updateDBSessionStatus("Session Expired", "", "", msg);
-    });
-
-    whatsappClient.on("disconnected", (reason: any) => {
-      console.warn("[WhatsApp] Client disconnected:", reason);
-      connectionState.status = "Disconnected";
-      connectionState.qrCode = "";
-      updateDBSessionStatus("Disconnected", "", "", `Wiped session or logged out: ${reason}`);
-    });
-
-    connectionState.status = "Connecting";
-    await whatsappClient.initialize();
-    return true;
-  } catch (err: any) {
-    console.error("[WhatsApp] Failed to launch real whatsapp-web.js: Running fallback emulator.", err.message);
-    connectionState.mode = "Simulator";
-    connectionState.status = "Disconnected";
-    connectionState.error = `Library initialization error: ${err.message}. Defaulting to Simulator.`;
-    return false;
+// Helper to clear Baileys Auth Session Folder on Logout or Authentication Failure
+function clearAuthFolder() {
+  const authPath = path.join(process.cwd(), ".baileys_auth");
+  if (fs.existsSync(authPath)) {
+    try {
+      fs.rmSync(authPath, { recursive: true, force: true });
+      console.log("[Baileys] Auth state folder cleared successfully.");
+    } catch (err: any) {
+      console.error("[Baileys] Failed to clear auth folder:", err.message);
+    }
   }
 }
 
-// Update state on DB if Supabase is connected
-async function updateDBSessionStatus(status: string, phone: string, qr: string, errorMsg?: string) {
+// Database initialization to create or alter required tables
+async function initDatabase() {
+  if (!supabase) return;
+  try {
+    const migrationsSql = `
+      CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT,
+        session_name TEXT UNIQUE DEFAULT 'default',
+        phone_number TEXT,
+        connection_status TEXT DEFAULT 'Disconnected',
+        status TEXT DEFAULT 'Disconnected',
+        last_connected TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        last_sync TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS message_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        phone TEXT,
+        message TEXT,
+        attachment TEXT,
+        status TEXT DEFAULT 'sent',
+        sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS user_id TEXT;
+      ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS connection_status TEXT;
+      ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_connected TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+      
+      ALTER TABLE whatsapp_message_logs ADD COLUMN IF NOT EXISTS phone TEXT;
+      ALTER TABLE whatsapp_message_logs ADD COLUMN IF NOT EXISTS message TEXT;
+      ALTER TABLE whatsapp_message_logs ADD COLUMN IF NOT EXISTS attachment TEXT;
+      ALTER TABLE whatsapp_message_logs ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    `;
+    const { error } = await supabase.rpc('exec_sql', { sql_query: migrationsSql });
+    if (error) {
+      console.warn("[WhatsApp DB Init] exec_sql failed, database structure assumed valid:", error.message);
+    } else {
+      console.log("[WhatsApp DB Init] Database migrations/alterations completed successfully.");
+    }
+  } catch (err: any) {
+    console.error("[WhatsApp DB Init] Database initialization failed:", err.message);
+  }
+}
+
+// Update status in the database
+async function updateDBSessionStatus(status: string, phone: string, qr: string) {
   if (!supabase) return;
   try {
     const { error } = await supabase
@@ -124,131 +99,280 @@ async function updateDBSessionStatus(status: string, phone: string, qr: string, 
       .upsert({
         session_name: "default",
         status: status,
+        connection_status: status,
         phone_number: phone,
-        last_sync: new Date().toISOString()
+        last_sync: new Date().toISOString(),
+        last_connected: new Date().toISOString()
       }, { onConflict: "session_name" });
-    if (error) console.error("[WhatsApp DB] Error updating session info:", error.message);
-  } catch (err) {
-    console.error(err);
+    if (error) console.error("[WhatsApp DB] Error updating session status:", error.message);
+  } catch (err: any) {
+    console.error("[WhatsApp DB] Exception updating session status:", err.message);
   }
 }
 
-// Log outgoing message to Database
-async function logMessageToDB(recipientName: string, num: string, type: string, content: string, msgType: string, status: string, error?: string) {
+// Log message to database
+async function logMessageToDB(
+  recipientName: string, 
+  num: string, 
+  type: string, 
+  content: string, 
+  msgType: string, 
+  status: string, 
+  error?: string,
+  attachmentUrl?: string
+) {
   if (!supabase) return;
   try {
-    await supabase.from("whatsapp_message_logs").insert([{
-      recipient_name: recipientName,
-      recipient_number: num,
-      recipient_type: type,
-      message_content: content,
-      message_type: msgType,
-      status: status,
-      error_message: error || null
-    }]);
-  } catch (err) {
-    console.error("[WhatsApp DB] Error writing message log:", err);
+    await Promise.allSettled([
+      supabase.from("whatsapp_message_logs").insert([{
+        recipient_name: recipientName,
+        recipient_number: num,
+        recipient_type: type,
+        message_content: content,
+        message_type: msgType,
+        status: status,
+        error_message: error || null,
+        attachment_url: attachmentUrl || null
+      }]),
+      supabase.from("message_logs").insert([{
+        phone: num,
+        message: content,
+        attachment: attachmentUrl || null,
+        status: status,
+        sent_at: new Date().toISOString()
+      }])
+    ]);
+  } catch (err: any) {
+    console.error("[WhatsApp DB] Exception writing message log:", err.message);
   }
 }
 
-// Initialize on server boot if mode is set
-setTimeout(() => {
-  initRealWhatsApp().catch(e => console.error("Real WhatsApp launch failed:", e));
-}, 1000);
+// Initialize Baileys Client
+async function initBaileys() {
+  try {
+    console.log("[Baileys] Initializing WhatsApp Socket connection...");
+    connectionState.status = "Connecting";
+    connectionState.error = null;
+    
+    const authPath = path.join(process.cwd(), ".baileys_auth");
+    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    
+    console.log(`[Baileys] Using WhatsApp Web version v${version.join('.')}, isLatest: ${isLatest}`);
+    
+    sock = makeWASocket({
+      version,
+      printQRInTerminal: true,
+      auth: state,
+      logger: pino({ level: "silent" }),
+      browser: ["School ERP", "Chrome", "1.0.0"]
+    });
+    
+    sock.ev.on("creds.update", saveCreds);
+    
+    sock.ev.on("connection.update", async (update: any) => {
+      const { connection, lastDisconnect, qr } = update;
+      
+      if (qr) {
+        console.log("[Baileys] Emitted new authentic QR Code:", qr);
+        connectionState.status = "Waiting for QR";
+        connectionState.qrCode = qr;
+        connectionState.error = null;
+        await updateDBSessionStatus("Waiting for QR", "", qr);
+      }
+      
+      if (connection === "close") {
+        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+        const loggedOut = statusCode === DisconnectReason.loggedOut;
+        console.log(`[Baileys] Connection closed. StatusCode: ${statusCode}, LoggedOut: ${loggedOut}`);
+        
+        connectionState.qrCode = "";
+        
+        if (loggedOut) {
+          console.warn("[Baileys] Session logged out by user or server. Wiping auth folder...");
+          clearAuthFolder();
+          connectionState.status = "Disconnected";
+          connectionState.phoneNumber = "";
+          await updateDBSessionStatus("Disconnected", "", "");
+        } else {
+          console.log("[Baileys] Reconnecting automatically using saved session keys...");
+          connectionState.status = "Connecting";
+          setTimeout(initBaileys, 3000);
+        }
+      } else if (connection === "connecting") {
+        connectionState.status = "Connecting";
+      } else if (connection === "open") {
+        const userJid = sock.user.id;
+        const cleanPhone = userJid.split(":")[0].split("@")[0];
+        console.log(`[Baileys] ✅ WhatsApp Connected! Number: +${cleanPhone}`);
+        
+        connectionState.status = "Connected";
+        connectionState.phoneNumber = "+" + cleanPhone;
+        connectionState.qrCode = "";
+        connectionState.lastSync = new Date().toISOString();
+        connectionState.error = null;
+        
+        await updateDBSessionStatus("Connected", "+" + cleanPhone, "");
+      }
+    });
+  } catch (err: any) {
+    console.error("[Baileys] Socket initialization failed:", err.message);
+    connectionState.status = "Disconnected";
+    connectionState.error = err.message;
+  }
+}
 
-// Endpoints
-whatsappRouter.get("/status", async (req, res) => {
-  res.json(connectionState);
+// Automatically launch on server startup to handle session restoration
+setTimeout(async () => {
+  await initDatabase();
+  const authPath = path.join(process.cwd(), ".baileys_auth");
+  if (fs.existsSync(authPath) && fs.readdirSync(authPath).length > 0) {
+    console.log("[Baileys] Saved authentication keys detected. Starting automatic session restore...");
+    initBaileys().catch(e => console.error("[Baileys] Auto restore failed:", e));
+  } else {
+    console.log("[Baileys] No saved session credentials found. Standing by for connection request.");
+  }
+}, 1500);
+
+// --- REST APIs requested by the user ---
+
+// GET /whatsapp/qr -> Returns ONLY the actual QR generated by WhatsApp
+whatsappRouter.get("/qr", (req, res) => {
+  if (connectionState.status === "Connected") {
+    return res.json({ qr: "", message: "WhatsApp is already paired." });
+  }
+  res.json({ qr: connectionState.qrCode || "" });
 });
+
+// GET /whatsapp/status -> Returns Connected, Disconnected, Connecting, Waiting for QR
+whatsappRouter.get("/status", (req, res) => {
+  if (req.query.format === "text") {
+    return res.send(connectionState.status);
+  }
+  res.json({
+    status: connectionState.status,
+    qrCode: connectionState.qrCode,
+    phoneNumber: connectionState.phoneNumber,
+    lastSync: connectionState.lastSync,
+    error: connectionState.error,
+    mode: connectionState.mode
+  });
+});
+
+// POST /whatsapp/send-message -> Body: { phone, message }
+whatsappRouter.post("/send-message", async (req, res) => {
+  const { phone, message } = req.body;
+  if (!phone || !message) {
+    return res.status(400).json({ error: "phone and message parameters are required." });
+  }
+
+  const cleanNum = phone.replace(/\D/g, "");
+  const targetId = `${cleanNum}@s.whatsapp.net`;
+
+  if (connectionState.status !== "Connected" || !sock) {
+    return res.status(400).json({ error: "WhatsApp is not connected." });
+  }
+
+  try {
+    await sock.sendMessage(targetId, { text: message });
+    await logMessageToDB("Direct Message", cleanNum, "other", message, "text", "delivered");
+    return res.json({ success: true, message: "Message sent successfully!" });
+  } catch (err: any) {
+    await logMessageToDB("Direct Message", cleanNum, "other", message, "text", "failed", err.message);
+    return res.status(500).json({ error: `Message delivery failed: ${err.message}` });
+  }
+});
+
+// POST /whatsapp/send-document -> Body: { phone, message, attachment }
+whatsappRouter.post("/send-document", async (req, res) => {
+  const { phone, message, attachment } = req.body;
+  if (!phone || !attachment) {
+    return res.status(400).json({ error: "phone and attachment parameters are required." });
+  }
+
+  const cleanNum = phone.replace(/\D/g, "");
+  const targetId = `${cleanNum}@s.whatsapp.net`;
+
+  if (connectionState.status !== "Connected" || !sock) {
+    return res.status(400).json({ error: "WhatsApp is not connected." });
+  }
+
+  try {
+    const isImage = attachment.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+    if (isImage) {
+      await sock.sendMessage(targetId, { 
+        image: { url: attachment }, 
+        caption: message || "" 
+      });
+    } else {
+      await sock.sendMessage(targetId, { 
+        document: { url: attachment }, 
+        mimetype: "application/pdf",
+        fileName: attachment.split("/").pop() || "document.pdf",
+        caption: message || ""
+      });
+    }
+    await logMessageToDB("Direct Document", cleanNum, "other", message || "Document attachment", "document", "delivered", undefined, attachment);
+    return res.json({ success: true, message: "Document sent successfully!" });
+  } catch (err: any) {
+    await logMessageToDB("Direct Document", cleanNum, "other", message || "Document attachment", "document", "failed", err.message, attachment);
+    return res.status(500).json({ error: `Document delivery failed: ${err.message}` });
+  }
+});
+
+// POST /whatsapp/logout -> Disconnects WhatsApp, clears session, updates status to "Disconnected" in DB.
+whatsappRouter.post("/logout", async (req, res) => {
+  connectionState.status = "Disconnected";
+  connectionState.phoneNumber = "";
+  connectionState.qrCode = "";
+  connectionState.error = null;
+
+  if (sock) {
+    try {
+      await sock.logout();
+    } catch (e: any) {
+      console.warn("[Baileys] Socket logout exception (maybe already closed):", e.message);
+      try {
+        sock.end(undefined);
+      } catch (err) {}
+    }
+    sock = null;
+  }
+
+  clearAuthFolder();
+  await updateDBSessionStatus("Disconnected", "", "");
+  res.json({ success: true, message: "WhatsApp disconnected and logged out successfully.", state: connectionState });
+});
+
+// POST /whatsapp/reconnect -> Reinitializes or reconnects
+whatsappRouter.post("/reconnect", async (req, res) => {
+  if (connectionState.status === "Connected" && sock) {
+    return res.json({ success: true, message: "WhatsApp is already connected." });
+  }
+  
+  if (sock) {
+    try { sock.end(undefined); } catch(e) {}
+    sock = null;
+  }
+  
+  initBaileys().catch(e => console.error("[Baileys] Manual reconnect init failed:", e));
+  res.json({ success: true, message: "WhatsApp reconnection procedure initiated.", state: connectionState });
+});
+
+// --- BACKWARDS COMPATIBILITY ROUTINGS FOR EXISTING UI ---
 
 whatsappRouter.post("/connect", async (req, res) => {
   if (connectionState.status === "Connected") {
     return res.json({ success: true, message: "WhatsApp is already connected." });
   }
-
-  if (connectionState.mode === "Real") {
-    if (!whatsappClient) {
-      await initRealWhatsApp();
-    } else {
-      try {
-        await whatsappClient.initialize();
-      } catch (e: any) {
-        connectionState.error = e.message;
-      }
-    }
-    return res.json({ success: true, message: "Initializing WhatsApp client session...", state: connectionState });
-  } else {
-    // Progressive Simulator Connection Flow: Connecting -> Waiting for QR -> QR Generated
-    connectionState.status = "Connecting";
-    connectionState.qrCode = "";
-    connectionState.error = null;
-
-    setTimeout(() => {
-      // Step 2: Transition to Waiting for QR after 1000ms
-      if (connectionState.status === "Connecting") {
-        connectionState.status = "Waiting for QR";
-      }
-    }, 1000);
-
-    setTimeout(() => {
-      // Step 3: Transition to QR Generated after another 1200ms
-      if (connectionState.status === "Waiting for QR") {
-        connectionState.status = "QR Generated";
-        connectionState.qrCode = "1@yK5p9R4LiSdW7vN05uAuVlYlF3s45xQcO5x...ERP_SIM_TOKEN_PXS..." + Date.now();
-      }
-    }, 2200);
-
-    return res.json({ success: true, message: "Started progressive simulator session initialization.", state: connectionState });
-  }
-});
-
-// Endpoint to simulate successful QR scan in sandbox mode
-whatsappRouter.post("/simulate-scan", async (req, res) => {
-  if (connectionState.status !== "QR Generated" && connectionState.status !== "Waiting for QR" && connectionState.status !== "ScanningQR") {
-    return res.status(400).json({ error: "Client must be of state Waiting for QR or QR Generated to simulate a QR scan." });
-  }
-
-  const simulatedPhone = req.body.phone || "+91 98765 43210";
-  connectionState.status = "Connected";
-  connectionState.phoneNumber = simulatedPhone;
-  connectionState.qrCode = "";
-  connectionState.lastSync = new Date().toISOString();
-  connectionState.error = null;
-
-  await updateDBSessionStatus("Connected", simulatedPhone, "");
-  res.json({ success: true, message: "Successfully paired simulated phone session!", state: connectionState });
-});
-
-whatsappRouter.post("/set-mode", async (req, res) => {
-  const { mode } = req.body;
-  if (mode !== "Real" && mode !== "Simulator") {
-    return res.status(400).json({ error: "Invalid mode. Must be 'Real' or 'Simulator'." });
-  }
-
-  console.log(`[WhatsApp] Changing connection mode manually to: ${mode}`);
   
-  if (whatsappClient) {
-    try {
-      await whatsappClient.destroy();
-      whatsappClient = null;
-    } catch (e) {
-      console.error("[WhatsApp] Cleanup while changing mode failed:", e);
-    }
+  if (sock) {
+    try { sock.end(undefined); } catch(e) {}
+    sock = null;
   }
 
-  connectionState.mode = mode;
-  connectionState.status = "Disconnected";
-  connectionState.qrCode = "";
-  connectionState.phoneNumber = "";
-  connectionState.error = null;
-
-  if (mode === "Real") {
-    initRealWhatsApp(true).catch(e => {
-      console.error("[WhatsApp] Failed to init real client on manual set mode:", e);
-    });
-  }
-
-  res.json({ success: true, message: `Successfully switched to ${mode} mode.`, state: connectionState });
+  initBaileys().catch(e => console.error("[Baileys] Manual connect init failed:", e));
+  return res.json({ success: true, message: "Initializing WhatsApp client session...", state: connectionState });
 });
 
 whatsappRouter.post("/disconnect", async (req, res) => {
@@ -257,72 +381,61 @@ whatsappRouter.post("/disconnect", async (req, res) => {
   connectionState.qrCode = "";
   connectionState.error = null;
 
-  if (whatsappClient) {
+  if (sock) {
     try {
-      await whatsappClient.destroy();
-      whatsappClient = null;
-    } catch (e) {
-      console.error(e);
+      await sock.logout();
+    } catch (e: any) {
+      try { sock.end(undefined); } catch (err) {}
     }
+    sock = null;
   }
 
+  clearAuthFolder();
   await updateDBSessionStatus("Disconnected", "", "");
   res.json({ success: true, message: "Disconnected successfully.", state: connectionState });
 });
 
-// Send single message
 whatsappRouter.post("/send", async (req, res) => {
-  const { recipientName, recipientNumber, recipientType, messageContent, messageType, attachmentUrl } = req.body;
-
+  const { recipientNumber, messageContent, recipientName, recipientType, attachmentUrl } = req.body;
   if (!recipientNumber) {
     return res.status(400).json({ error: "Recipient phone number is required." });
   }
 
   const cleanNum = recipientNumber.replace(/\D/g, "");
-  const targetId = cleanNum.includes("@c.us") ? cleanNum : `${cleanNum}@c.us`;
+  const targetId = `${cleanNum}@s.whatsapp.net`;
 
-  if (connectionState.status !== "Connected") {
+  if (connectionState.status !== "Connected" || !sock) {
     return res.status(400).json({ error: "WhatsApp is not connected. Connect first from the dashboard." });
   }
 
   try {
-    if (connectionState.mode === "Real" && whatsappClient) {
-      // Send real message using whatsapp-web.js
-      if (attachmentUrl) {
-        // Send with document/media attachments
-        // Typically reads file URL into MessageMedia, but here we can serialize it
-        // and send natively or pass standard text including external attachment link
-        const textWithAttachment = `${messageContent}\n\nAttachment: ${attachmentUrl}`;
-        await whatsappClient.sendMessage(targetId, textWithAttachment);
+    if (attachmentUrl) {
+      const isImage = attachmentUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+      if (isImage) {
+        await sock.sendMessage(targetId, { 
+          image: { url: attachmentUrl }, 
+          caption: messageContent || "" 
+        });
       } else {
-        await whatsappClient.sendMessage(targetId, messageContent);
+        await sock.sendMessage(targetId, { 
+          document: { url: attachmentUrl }, 
+          mimetype: "application/pdf",
+          fileName: attachmentUrl.split("/").pop() || "document.pdf",
+          caption: messageContent || ""
+        });
       }
-      
-      await logMessageToDB(recipientName || "Direct Contact", cleanNum, recipientType || "other", messageContent, messageType || "text", "delivered");
-      return res.json({ success: true, message: "Message sent successfully!", provider: "Real Web WhatsApp" });
+      await logMessageToDB(recipientName || "Direct Contact", cleanNum, recipientType || "other", messageContent, "document", "delivered", undefined, attachmentUrl);
     } else {
-      // Simulator mode sends mock success and triggers webhooks
-      const statusOptions = ["sent", "delivered", "failed"];
-      const randomStatus = Math.random() > 0.05 ? "delivered" : "failed"; // 95% deliverability rate
-      const errorMsg = randomStatus === "failed" ? "Network routing delay or invalid contact format" : undefined;
-
-      await logMessageToDB(recipientName || "Direct Contact", cleanNum, recipientType || "other", messageContent, messageType || "text", randomStatus, errorMsg);
-      
-      return res.json({ 
-        success: true, 
-        message: `[Simulated] Message sent successfully to ${recipientName || cleanNum}!`, 
-        status: randomStatus,
-        error: errorMsg,
-        provider: "Virtual ERP Gateway"
-      });
+      await sock.sendMessage(targetId, { text: messageContent });
+      await logMessageToDB(recipientName || "Direct Contact", cleanNum, recipientType || "other", messageContent, "text", "delivered");
     }
+    return res.json({ success: true, message: "Message sent successfully!", provider: "Baileys API Gateway" });
   } catch (err: any) {
-    await logMessageToDB(recipientName || "Direct Contact", cleanNum, recipientType || "other", messageContent, messageType || "text", "failed", err.message);
+    await logMessageToDB(recipientName || "Direct Contact", cleanNum, recipientType || "other", messageContent, "text", "failed", err.message, attachmentUrl);
     res.status(500).json({ error: `Message delivery failed: ${err.message}` });
   }
 });
 
-// Bulk Messaging
 whatsappRouter.post("/bulk", async (req, res) => {
   const { recipients, templateBody, campaignName, messageType } = req.body;
 
@@ -330,14 +443,13 @@ whatsappRouter.post("/bulk", async (req, res) => {
     return res.status(400).json({ error: "Recipients array is required." });
   }
 
-  if (connectionState.status !== "Connected") {
+  if (connectionState.status !== "Connected" || !sock) {
     return res.status(400).json({ error: "WhatsApp is not connected." });
   }
 
   let successCount = 0;
   let failCount = 0;
 
-  // Insert standard campaign tracking record
   let campaignId = "";
   if (supabase) {
     try {
@@ -346,12 +458,9 @@ whatsappRouter.post("/bulk", async (req, res) => {
         status: "running"
       }).select().single();
       campaignId = campaign?.id || "";
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   }
 
-  // Iterate and queue or send with short throttles to simulate natural sending
   for (const item of recipients) {
     const cleanNum = item.phone.replace(/\D/g, "");
     if (!cleanNum) {
@@ -360,7 +469,6 @@ whatsappRouter.post("/bulk", async (req, res) => {
     }
 
     try {
-      // Dynamic variables replacement
       let customMessage = templateBody
         .replace(/{name}/gi, item.name || "Recipient")
         .replace(/{class}/gi, item.className || "N/A")
@@ -368,29 +476,15 @@ whatsappRouter.post("/bulk", async (req, res) => {
         .replace(/{date}/gi, new Date().toLocaleDateString())
         .replace(/{roll}/gi, item.rollNo || "N/A");
 
-      if (connectionState.mode === "Real" && whatsappClient) {
-        const targetId = `${cleanNum}@c.us`;
-        await whatsappClient.sendMessage(targetId, customMessage);
-        await logMessageToDB(item.name, cleanNum, item.role || "student", customMessage, messageType || "text", "delivered");
-        successCount++;
-      } else {
-        // Simulated natural random send delay to show scannable live activity
-        const randomStatus = Math.random() > 0.08 ? "delivered" : "failed";
-        const errorMsg = randomStatus === "failed" ? "Mobile subscriber temporarily out of coverage" : undefined;
-        await logMessageToDB(item.name, cleanNum, item.role || "student", customMessage, messageType || "text", randomStatus, errorMsg);
-        
-        if (randomStatus === "delivered") {
-          successCount++;
-        } else {
-          failCount++;
-        }
-      }
+      const targetId = `${cleanNum}@s.whatsapp.net`;
+      await sock.sendMessage(targetId, { text: customMessage });
+      await logMessageToDB(item.name, cleanNum, item.role || "student", customMessage, messageType || "text", "delivered");
+      successCount++;
     } catch (e) {
       failCount++;
     }
   }
 
-  // Check out campaign status
   if (supabase && campaignId) {
     await supabase.from("whatsapp_campaigns").update({ status: "sent" }).eq("id", campaignId);
   }
@@ -403,7 +497,6 @@ whatsappRouter.post("/bulk", async (req, res) => {
   });
 });
 
-// Endpoint to simulate incoming user response (useful for sandbox workflow triggers)
 whatsappRouter.post("/incoming-reply", async (req, res) => {
   const { senderNumber, senderName, messageContent } = req.body;
   if (!senderNumber || !messageContent) {
@@ -420,17 +513,15 @@ whatsappRouter.post("/incoming-reply", async (req, res) => {
         message_content: messageContent
       });
 
-      // Simple keywords responses emulator!
       if (messageContent.toLowerCase().includes("fee")) {
-        // Auto-reply context trigger
         const autoReply = `Hello ${senderName || "there"}, our automated support logs show a fee dues inquiry. To get live ledgers, tap the dashboard or reply with "1" to get the standard bank payment details. Thank you!`;
-        console.log("[WhatsApp AutoResponder] Sending auto dues reminder callback.");
-        
+        const targetId = `${cleanNum}@s.whatsapp.net`;
+        if (sock && connectionState.status === "Connected") {
+          await sock.sendMessage(targetId, { text: autoReply });
+        }
         await logMessageToDB("AutoResponder Reply", cleanNum, "parent", autoReply, "text", "delivered");
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
   }
 
   res.json({ success: true, message: "Simulated response recorded successfully." });

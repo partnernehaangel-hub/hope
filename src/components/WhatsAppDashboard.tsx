@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   Phone, Shield, RefreshCw, Power, CheckCircle, 
-  AlertCircle, Check, HelpCircle, ArrowUpRight, MessageSquare
+  AlertCircle, Check, HelpCircle, ArrowUpRight, MessageSquare, Link
 } from "lucide-react";
 import QRCode from "react-qr-code";
 import { motion, AnimatePresence } from "motion/react";
@@ -41,7 +41,28 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
     try {
       const res = await fetch("/api/whatsapp/connect", { method: "POST" });
       const data = await res.json();
-      setConnection(data.state || connection);
+      if (data.state) {
+        setConnection(data.state);
+      } else {
+        await fetchStatus();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefreshQR = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/whatsapp/reconnect", { method: "POST" });
+      const data = await res.json();
+      if (data.state) {
+        setConnection(data.state);
+      } else {
+        await fetchStatus();
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -50,12 +71,16 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
   };
 
   const handleDisconnect = async () => {
-    if (!confirm("Are you sure you want to disconnect, clear saved browser session and log out?")) return;
+    if (!confirm("Are you sure you want to disconnect WhatsApp and clear the saved session?")) return;
     setLoading(true);
     try {
       const res = await fetch("/api/whatsapp/disconnect", { method: "POST" });
       const data = await res.json();
-      setConnection(data.state);
+      if (data.state) {
+        setConnection(data.state);
+      } else {
+        await fetchStatus();
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -101,28 +126,30 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-widest rounded-full">
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                  Connected
+                  ✅ WhatsApp Connected
                 </div>
                 <h3 className="text-2xl font-black text-slate-800 tracking-tight">WhatsApp Connected Successfully</h3>
                 <p className="text-slate-500 text-xs max-w-md mx-auto leading-relaxed font-semibold">
-                  Headless browser instance has paired your mobile number. Automatic communication protocols are actively listening. Output triggers are mapped securely.
+                  The Baileys secure background service has paired your mobile number. Real-time notifications, dues, homework, and certificates will stream automatically.
                 </p>
               </div>
 
               {/* Connected Phone signature panel */}
               <div className="w-full max-w-md bg-slate-50 border border-slate-100 rounded-2xl p-5 grid grid-cols-2 gap-4 text-left">
                 <div className="space-y-1">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Linked Phone</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Connected Number</span>
                   <div className="flex items-center gap-2 text-slate-800">
                     <Phone className="text-emerald-500 shrink-0" size={16} />
-                    <p className="text-xs font-black tracking-tight">{connection.phoneNumber || "Verified Phone"}</p>
+                    <p className="text-xs font-black tracking-tight">{connection.phoneNumber || "Unknown Phone"}</p>
                   </div>
                 </div>
                 <div className="space-y-1 border-l border-slate-200 pl-4">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Active State</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Connected Time</span>
                   <div className="flex items-center gap-2 text-slate-800">
                     <Shield className="text-indigo-500 shrink-0" size={16} />
-                    <p className="text-xs font-black text-slate-500">Persistent Auth</p>
+                    <p className="text-[11px] font-bold text-slate-500">
+                      {connection.lastSync ? new Date(connection.lastSync).toLocaleString() : "Just now"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -131,7 +158,7 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={handleDisconnect}
-                  className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-2xl font-extrabold uppercase text-[11px] tracking-wider border border-rose-200/60 transition-all cursor-pointer"
+                  className="px-6 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-2xl font-extrabold uppercase text-[11px] tracking-wider border border-rose-200/60 transition-all cursor-pointer shadow-sm"
                 >
                   Disconnect WhatsApp
                 </button>
@@ -191,6 +218,24 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
                   </div>
                 </div>
 
+                {/* Connection Status Panel */}
+                <div className="w-full bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2 mt-2 text-left">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Connection Status</span>
+                    <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] ${
+                      connection.status === "Connecting" ? "bg-sky-100 text-sky-800 animate-pulse" :
+                      connection.status === "Waiting for QR" ? "bg-amber-100 text-amber-800" :
+                      "bg-slate-100 text-slate-500"
+                    }`}>
+                      {connection.status}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Phone Number</span>
+                    <span className="font-mono text-slate-600">{connection.phoneNumber || "Not Paired"}</span>
+                  </div>
+                </div>
+
                 {/* stay logged in & support link */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-slate-100">
                   <label htmlFor="keep-logged-in" className="flex items-center gap-2 cursor-pointer select-none group">
@@ -218,20 +263,17 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
               </div>
 
               {/* Right Column: Original QR scan container */}
-              <div className="md:col-span-5 flex flex-col items-center justify-center">
+              <div className="md:col-span-5 flex flex-col items-center justify-center space-y-4">
                 <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-md relative w-full max-w-[280px] aspect-square flex items-center justify-center">
                   
-                  {connection.status === "Connecting" ? (
-                    <div className="flex flex-col items-center justify-center space-y-3">
-                      <div className="w-10 h-10 border-4 border-slate-100 border-t-[#25D366] rounded-full animate-spin"></div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Launching</p>
+                  {connection.status === "Connecting" || (connection.status === "Waiting for QR" && !connection.qrCode) ? (
+                    <div className="flex flex-col items-center justify-center space-y-3 text-center px-4">
+                      <div className="w-12 h-12 border-4 border-slate-100 border-t-[#25D366] rounded-full animate-spin"></div>
+                      <p className="text-xs font-semibold text-slate-500 animate-pulse leading-relaxed">
+                        Waiting for WhatsApp to generate QR Code...
+                      </p>
                     </div>
-                  ) : connection.status === "Waiting for QR" ? (
-                    <div className="flex flex-col items-center justify-center space-y-3">
-                      <div className="w-10 h-10 border-4 border-slate-100 border-t-indigo-600 rounded-full animate-spin"></div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest animate-pulse">Generating</p>
-                    </div>
-                  ) : (connection.status === "QR Generated" || connection.status === "ScanningQR") && connection.qrCode ? (
+                  ) : connection.status === "Waiting for QR" && connection.qrCode ? (
                     /* Renders beautiful customized styling with centered WhatsApp mini square hook */
                     <div className="relative">
                       <QRCode 
@@ -244,36 +286,47 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
                         <MessageSquare size={18} fill="#25D366" className="text-white" />
                       </div>
                     </div>
-                  ) : connection.status === "Session Expired" ? (
-                    <div className="flex flex-col items-center justify-center space-y-2 text-center px-4">
-                      <AlertCircle size={36} className="text-rose-500 animate-bounce" />
-                      <p className="text-xs font-bold text-rose-900 uppercase">Session Expired</p>
-                      <p className="text-[9px] text-slate-400 leading-normal">
-                        Your previous session key was invalidated. Re-establish credentials.
-                      </p>
-                    </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center space-y-2 text-center p-4">
                       <Power size={36} className="text-slate-300" />
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Gateway Standby</p>
                       <button 
                         onClick={handleConnect}
-                        className="mt-3 px-4 py-2 bg-[#25D366] hover:bg-[#1fbc55] text-white text-[10px] font-bold uppercase rounded-xl tracking-wider transition-all cursor-pointer"
+                        className="mt-3 px-5 py-2.5 bg-[#25D366] hover:bg-[#1fbc55] text-white text-[11px] font-bold uppercase rounded-xl tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
                       >
-                        Launch QR Code
+                        <Link size={13} />
+                        Connect WhatsApp
                       </button>
                     </div>
                   )}
                   
                 </div>
 
+                {/* Control Panel when initiating connection */}
+                {(connection.status === "Connecting" || connection.status === "Waiting for QR") && (
+                  <div className="flex gap-2 w-full max-w-[280px]">
+                    <button
+                      onClick={handleRefreshQR}
+                      className="flex-1 py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-bold uppercase rounded-xl border border-slate-200 transition-all cursor-pointer flex items-center justify-center gap-1 shadow-xs"
+                    >
+                      <RefreshCw size={11} />
+                      Refresh QR
+                    </button>
+                    <button
+                      onClick={handleDisconnect}
+                      className="flex-1 py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold uppercase rounded-xl border border-rose-200 transition-all cursor-pointer flex items-center justify-center gap-1 shadow-xs"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                )}
+
                 {/* Live Status indicator capsule below QR */}
-                <div className="mt-4 flex items-center justify-center gap-2">
+                <div className="flex items-center justify-center gap-2">
                   <span className={`h-2.5 w-2.5 rounded-full ${
                     connection.status === "Connecting" ? "bg-blue-500 animate-pulse" :
                     connection.status === "Waiting for QR" ? "bg-indigo-500 animate-pulse" :
-                    connection.status === "QR Generated" ? "bg-amber-400 animate-ping" :
-                    connection.status === "Session Expired" ? "bg-rose-500" :
+                    connection.status === "Connected" ? "bg-emerald-500" :
                     "bg-slate-400"
                   }`} />
                   <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider">

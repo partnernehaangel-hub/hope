@@ -6788,18 +6788,28 @@ const FeeManagement = ({
 
   const filteredStudentsForCollection = sortStudentsList(
     students.filter((s: any) => {
+      const searchVal = (searchFilters.search || '').trim().toLowerCase();
       return (!searchFilters.class || s.class === searchFilters.class) &&
              (!searchFilters.section || s.section === searchFilters.section) &&
-             (!searchFilters.search || s.studentId?.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.name.toLowerCase().includes(searchFilters.search.toLowerCase()) || s.surname.toLowerCase().includes(searchFilters.search.toLowerCase()));
+             (!searchFilters.search || 
+               (s.studentId || '').toLowerCase().includes(searchVal) || 
+               (s.name || '').toLowerCase().includes(searchVal) || 
+               (s.surname || '').toLowerCase().includes(searchVal)
+             );
     }),
     masterData.classes
   );
 
   const filteredStudentsForLedger = sortStudentsList(
     students.filter((s: any) => {
+      const searchVal = (ledgerSearchFilters.search || '').trim().toLowerCase();
       return (!ledgerSearchFilters.class || s.class === ledgerSearchFilters.class) &&
              (!ledgerSearchFilters.section || s.section === ledgerSearchFilters.section) &&
-             (!ledgerSearchFilters.search || s.studentId?.toLowerCase().includes(ledgerSearchFilters.search.toLowerCase()) || s.name.toLowerCase().includes(ledgerSearchFilters.search.toLowerCase()) || s.surname.toLowerCase().includes(ledgerSearchFilters.search.toLowerCase()));
+             (!ledgerSearchFilters.search || 
+               (s.studentId || '').toLowerCase().includes(searchVal) || 
+               (s.name || '').toLowerCase().includes(searchVal) || 
+               (s.surname || '').toLowerCase().includes(searchVal)
+             );
     }),
     masterData.classes
   );
@@ -16749,6 +16759,7 @@ export default function App() {
           ALTER TABLE IF EXISTS exam_results ADD COLUMN IF NOT EXISTS exam_name TEXT;
           ALTER TABLE IF EXISTS exam_results ADD COLUMN IF NOT EXISTS student_id TEXT;
           ALTER TABLE IF EXISTS exam_results ADD COLUMN IF NOT EXISTS subject TEXT;
+          ALTER TABLE IF EXISTS exam_results ADD COLUMN IF NOT EXISTS exam_type TEXT DEFAULT 'Main';
         `;
 
         const frontOfficeMigrations = `
@@ -22892,11 +22903,15 @@ const HostelModule = ({
     }
   };
 
-  const filteredStudents = students.filter((s: any) => 
-    (!filterClass || s.class === filterClass) &&
-    (!filterSection || s.section === filterSection) &&
-    (!filterSearch || s.name.toLowerCase().includes(filterSearch.toLowerCase()) || s.studentId.includes(filterSearch))
-  );
+  const filteredStudents = students.filter((s: any) => {
+    const searchVal = (filterSearch || '').trim().toLowerCase();
+    return (!filterClass || s.class === filterClass) &&
+      (!filterSection || s.section === filterSection) &&
+      (!filterSearch || 
+        (s.name || '').toLowerCase().includes(searchVal) || 
+        (s.studentId || '').toLowerCase().includes(searchVal)
+      );
+  });
 
   const stats = {
     totalRooms: rooms.length,
@@ -23272,7 +23287,9 @@ const HostelModule = ({
                       .filter((s: any) => {
                         const matchesClass = !filterClass || s.class === filterClass;
                         const matchesSection = !filterSection || s.section === filterSection;
-                        const matchesSearch = !filterSearch || s.name.toLowerCase().includes(filterSearch.toLowerCase()) || s.studentId.includes(filterSearch);
+                        const matchesSearch = !filterSearch || 
+                          (s.name || '').toLowerCase().includes(filterSearch.toLowerCase()) || 
+                          (s.studentId || '').toLowerCase().includes(filterSearch.toLowerCase());
                         return matchesClass && matchesSection && matchesSearch;
                       })
                       .map((student: any) => {
@@ -23644,7 +23661,9 @@ const HostelModule = ({
                   {students
                     .filter((s: any) => {
                       const isAlreadyEnrolled = beds.some((b: any) => b.studentId === s.studentId && b.status === 'Occupied');
-                      const matchesSearch = !enrollSearch || s.name.toLowerCase().includes(enrollSearch.toLowerCase()) || s.studentId.includes(enrollSearch);
+                      const matchesSearch = !enrollSearch || 
+                        (s.name || '').toLowerCase().includes(enrollSearch.toLowerCase()) || 
+                        (s.studentId || '').toLowerCase().includes(enrollSearch.toLowerCase());
                       const matchesClass = !enrollClass || s.class === enrollClass;
                       return !isAlreadyEnrolled && matchesSearch && matchesClass;
                     })
@@ -23799,10 +23818,14 @@ const IDCardsModule = ({
 
     const fullName = `${person.name || ''} ${person.surname || ''}`.trim();
     let nameFontSize = 'text-[14px]';
-    if (fullName.length > 22) {
+    if (fullName.length > 30) {
+      nameFontSize = 'text-[9.5px]';
+    } else if (fullName.length > 25) {
       nameFontSize = 'text-[11px]';
-    } else if (fullName.length > 14) {
-      nameFontSize = 'text-[12.5px]';
+    } else if (fullName.length > 18) {
+      nameFontSize = 'text-[12px]';
+    } else if (fullName.length > 13) {
+      nameFontSize = 'text-[13px]';
     }
 
     const bodyPtClass = orientation === 'portrait' ? 'pt-5' : 'pt-4';
@@ -25425,7 +25448,7 @@ const ExaminationModule = ({
     }
 
     try {
-      const payload = {
+      const payload: any = {
         exam_name: examName,
         exam_type: (exams || []).find((e: any) => e.id === schedule.examId)?.type || 'Main',
         student_id: studentId,
@@ -25441,45 +25464,82 @@ const ExaminationModule = ({
         r.subject === schedule.subject
       );
       
+      let dbError = null;
+      let insertedRow = null;
+
       if (existingIdx > -1) {
         const existingId = examResults[existingIdx].id;
         const { error } = await supabase
           .from('exam_results')
           .update(payload)
           .eq('id', existingId);
-        if (error) throw error;
         
-        const updated = [...examResults];
-        updated[existingIdx] = { 
-          ...examResults[existingIdx], 
-          ...payload, 
-          marks: payload.marks_obtained,
-          marksObtained: payload.marks_obtained,
-          maxMarks: payload.max_marks,
-          feedback: payload.feedback
-        };
-        setExamResults(updated);
+        if (error) {
+          // If the column 'exam_type' doesn't exist yet, retry without it
+          if (error.message?.includes('exam_type') || error.code === '42703') {
+            const { exam_type, ...fallbackPayload } = payload;
+            const { error: retryError } = await supabase
+              .from('exam_results')
+              .update(fallbackPayload)
+              .eq('id', existingId);
+            dbError = retryError;
+          } else {
+            dbError = error;
+          }
+        }
+        
+        if (!dbError) {
+          const updated = [...examResults];
+          updated[existingIdx] = { 
+            ...examResults[existingIdx], 
+            ...payload, 
+            marks: payload.marks_obtained,
+            marksObtained: payload.marks_obtained,
+            maxMarks: payload.max_marks,
+            feedback: payload.feedback
+          };
+          setExamResults(updated);
+        }
       } else {
         const { data: inserted, error } = await supabase
           .from('exam_results')
           .insert([payload])
           .select();
-        if (error) throw error;
-        if (inserted) {
+        
+        if (error) {
+          // If the column 'exam_type' doesn't exist yet, retry without it
+          if (error.message?.includes('exam_type') || error.code === '42703') {
+            const { exam_type, ...fallbackPayload } = payload;
+            const { data: retryInserted, error: retryError } = await supabase
+              .from('exam_results')
+              .insert([fallbackPayload])
+              .select();
+            dbError = retryError;
+            insertedRow = retryInserted;
+          } else {
+            dbError = error;
+          }
+        } else {
+          insertedRow = inserted;
+        }
+
+        if (!dbError && insertedRow && insertedRow.length > 0) {
           const newResult = {
-            ...inserted[0],
-            examName: inserted[0].exam_name,
-            studentId: inserted[0].student_id,
-            subject: inserted[0].subject,
-            marks: inserted[0].marks_obtained,
-            marksObtained: inserted[0].marks_obtained,
-            maxMarks: inserted[0].max_marks,
-            feedback: inserted[0].feedback,
+            ...insertedRow[0],
+            examName: insertedRow[0].exam_name,
+            studentId: insertedRow[0].student_id,
+            subject: insertedRow[0].subject,
+            marks: insertedRow[0].marks_obtained,
+            marksObtained: insertedRow[0].marks_obtained,
+            maxMarks: insertedRow[0].max_marks,
+            feedback: insertedRow[0].feedback,
             examScheduleId: scheduleId // Map back for local UI
           };
           setExamResults([...examResults, newResult]);
         }
       }
+      
+      if (dbError) throw dbError;
       alert(`Marks for ${studentName} saved successfully!`);
     } catch (err) {
       console.error('Error saving marks:', err);

@@ -19,6 +19,7 @@ async function startServer() {
 
   // WhatsApp Integration APIs
   app.use("/api/whatsapp", whatsappRouter);
+  app.use("/whatsapp", whatsappRouter);
 
   // Secure Image CORS Proxy Endpoint
   app.get("/api/proxy-image", async (req, res) => {

@@ -473,7 +473,10 @@ export const drawIDCardToPDF = async (
     const fullName = `${person.name || ''} ${person.surname || ''}`.trim().toUpperCase();
 
     // Student Name
-    const nameFontSize = fullName.length > 20 ? 6.5 : (fullName.length > 14 ? 7.5 : 8.5);
+    let nameFontSize = fullName.length > 20 ? 6.5 : (fullName.length > 14 ? 7.5 : 8.5);
+    while (nameFontSize > 4.5 && fontBold.widthOfTextAtSize(fullName, nameFontSize) > rightW) {
+      nameFontSize -= 0.5;
+    }
     page.drawText(fullName, {
       x: rightX,
       y: headerY - 16,
@@ -617,7 +620,10 @@ export const drawIDCardToPDF = async (
     const fullName = `${person.name || ''} ${person.surname || ''}`.trim().toUpperCase();
 
     // Student Name
-    const nameFontSize = fullName.length > 20 ? 7.5 : (fullName.length > 14 ? 8.5 : 9.5);
+    let nameFontSize = fullName.length > 20 ? 7.5 : (fullName.length > 14 ? 8.5 : 9.5);
+    while (nameFontSize > 4.5 && fontBold.widthOfTextAtSize(fullName, nameFontSize) > rightW) {
+      nameFontSize -= 0.5;
+    }
     page.drawText(fullName, {
       x: rightX,
       y: headerY - 12,
