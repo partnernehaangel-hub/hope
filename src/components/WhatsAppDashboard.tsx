@@ -25,13 +25,24 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
       const res = await fetch("/api/whatsapp/status");
       const data = await res.json();
       setConnection(data);
+      return data;
     } catch (e) {
       console.error("[WhatsApp REST] Poll status failed:", e);
+      return null;
     }
   };
 
   useEffect(() => {
-    fetchStatus();
+    const initAndAutoConnect = async () => {
+      const current = await fetchStatus();
+      if (current && current.status === "Disconnected") {
+        console.log("[WhatsApp Dashboard] Auto-connecting disconnected instance...");
+        fetch("/api/whatsapp/connect", { method: "POST" })
+          .then(() => fetchStatus())
+          .catch(e => console.error(e));
+      }
+    };
+    initAndAutoConnect();
     const interval = setInterval(fetchStatus, 3000); // Poll status every 3 seconds
     return () => clearInterval(interval);
   }, [refreshes]);
@@ -216,6 +227,31 @@ export const WhatsAppDashboard = ({ schoolProfile, supabase }: any) => {
                       Scan the QR code displayed on this page.
                     </p>
                   </div>
+                </div>
+
+                {/* One-Click WhatsApp Web Link Panel */}
+                <div className="p-5 bg-emerald-50/60 border border-emerald-100 rounded-2xl space-y-3 mt-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0">
+                      <MessageSquare size={18} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800 uppercase tracking-widest">WhatsApp Web Integration</h4>
+                      <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                        Opening <strong className="text-[#25D366]">https://web.whatsapp.com/</strong> opens standard WhatsApp Web. By scanning the QR code on this page, the software will automatically log in and authorize the ERP to send messages on your behalf.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      window.open("https://web.whatsapp.com/", "_blank");
+                      handleConnect();
+                    }}
+                    className="w-full py-3 bg-[#25D366] hover:bg-[#1fbc55] text-white font-black text-[11px] uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/10 cursor-pointer"
+                  >
+                    <ArrowUpRight size={14} />
+                    Open web.whatsapp.com & Link Software
+                  </button>
                 </div>
 
                 {/* Connection Status Panel */}

@@ -1392,7 +1392,147 @@ const ReportCardView = ({ student, template, reportCard, schoolProfile }: { stud
   );
 };
 
-const ReportCardEditor = ({ student, template, reportCard: existingReport, schoolProfile, onClose, onSave }: any) => {
+const insertUserResiliently = async (supabase: any, userPayload: any) => {
+  let userError: any = null;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .insert([userPayload]);
+      
+      if (!error) {
+        return null;
+      }
+      
+      userError = error;
+      const errorMsg = error.message?.toLowerCase() || '';
+      if (error.code === 'PGRST204' || errorMsg.includes('schema cache') || errorMsg.includes('column') || errorMsg.includes('id')) {
+        console.warn(`Attempt ${attempt + 1} to create user failed with schema cache issue. Reloading schema...`);
+        try {
+          await supabase.rpc('exec_sql', { sql_query: "NOTIFY pgrst, 'reload schema';" });
+        } catch (rpcErr) {
+          console.warn('Silent RPC error during user schema reload:', rpcErr);
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        break;
+      }
+    } catch (catchErr: any) {
+      userError = catchErr;
+      const errorMsg = catchErr.message?.toLowerCase() || '';
+      if (errorMsg.includes('schema cache') || errorMsg.includes('column')) {
+        try {
+          await supabase.rpc('exec_sql', { sql_query: "NOTIFY pgrst, 'reload schema';" });
+        } catch (e) {}
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        break;
+      }
+    }
+  }
+  return userError;
+};
+
+const autoFillFromExams = (studentId: string, template: any, examResults: any[], examSchedules: any[], exams: any[]) => {
+  const termData: any = {};
+  
+  if (!template || !template.terms || !template.subjects) return termData;
+
+  template.terms.forEach((term: any) => {
+    termData[term.id] = { subjects: {}, attendance: '' };
+    
+    template.subjects.forEach((subject: string) => {
+      termData[term.id].subjects[subject] = {};
+      
+      term.subColumns.forEach((col: any) => {
+        // Find matching exam results
+        const matchedResult = (examResults || []).find((res: any) => {
+          if (res.studentId !== studentId) return false;
+          
+          const subjectMatch = (res.subject || '').trim().toLowerCase() === subject.trim().toLowerCase();
+          if (!subjectMatch) return false;
+
+          const sched = (examSchedules || []).find(s => s.id === res.examScheduleId);
+          const exam = sched ? (exams || []).find(e => e.id === sched.examId) : null;
+          const examNameStr = (res.examName || exam?.name || '').trim().toLowerCase();
+          const termNameStr = (term.name || '').trim().toLowerCase();
+
+          // Check if examNameStr matches termNameStr
+          const termWords = termNameStr.split(/\s+/).filter((w: string) => w.length > 1 && w !== 'term');
+          const matchesTerm = termWords.length > 0 && termWords.every((word: string) => examNameStr.includes(word)) ||
+                             examNameStr.includes(termNameStr) || 
+                             termNameStr.includes(examNameStr);
+
+          return matchesTerm;
+        });
+
+        if (matchedResult) {
+          termData[term.id].subjects[subject][col.id] = matchedResult.marks;
+        } else {
+          // Fallback to any result for this subject if there's only one and this is the first term
+          const studentSubjectResults = (examResults || []).filter((res: any) => 
+            res.studentId === studentId && 
+            (res.subject || '').trim().toLowerCase() === subject.trim().toLowerCase()
+          );
+          if (studentSubjectResults.length === 1 && term.id === template.terms[0].id) {
+            termData[term.id].subjects[subject][col.id] = studentSubjectResults[0].marks;
+          }
+        }
+      });
+    });
+  });
+
+  return termData;
+};
+
+const calculateReportCardStats = (termData: any, template: any) => {
+  let totalMarksObtained = 0;
+  let totalMaxPossible = 0;
+  const subjects = template?.subjects || [];
+
+  subjects.forEach(sub => {
+    let subT1Total = 0;
+    let t1Max = 0;
+    const t1 = template?.terms?.[0];
+    if (t1) {
+      t1.subColumns.forEach(col => {
+        subT1Total += (Number(termData?.[t1.id]?.subjects?.[sub]?.[col.id]) || 0);
+        t1Max += col.maxMarks;
+      });
+    }
+
+    let subT2Total = 0;
+    let t2Max = 0;
+    const t2 = template?.terms?.[1];
+    if (t2) {
+      t2.subColumns.forEach(col => {
+        subT2Total += (Number(termData?.[t2.id]?.subjects?.[sub]?.[col.id]) || 0);
+        t2Max += col.maxMarks;
+      });
+    }
+
+    let finalRes = 0;
+    if (t1Max > 0 && t2Max === 0) {
+      finalRes = Number(((subT1Total / t1Max) * 100).toFixed(1));
+    } else {
+      const t1Weighted = t1Max > 0 ? Number(((subT1Total / t1Max) * 50).toFixed(2)) : 0;
+      const t2Weighted = t2Max > 0 ? Number(((subT2Total / t2Max) * 50).toFixed(2)) : 0;
+      finalRes = Number((t1Weighted + t2Weighted).toFixed(1));
+    }
+
+    totalMarksObtained += finalRes;
+    totalMaxPossible += 100;
+  });
+
+  const percentage = totalMaxPossible > 0 ? (totalMarksObtained / totalMaxPossible) * 100 : 0;
+  return {
+    aggregate: totalMarksObtained.toFixed(1),
+    percentage: percentage.toFixed(2),
+    result: percentage >= 33 ? 'Pass' : 'Fail'
+  };
+};
+
+const ReportCardEditor = ({ student, template, reportCard: existingReport, schoolProfile, examResults, examSchedules, exams, onClose, onSave }: any) => {
   const [formData, setFormData] = useState<ReportCard>(existingReport || {
     id: Date.now().toString(),
     studentId: student?.studentId || '',
@@ -1511,6 +1651,25 @@ const ReportCardEditor = ({ student, template, reportCard: existingReport, schoo
             <p className="text-sm text-text-sub">Template: {template.name}</p>
           </div>
           <div className="flex items-center gap-4">
+            <button 
+              type="button"
+              onClick={() => {
+                const filled = autoFillFromExams(student.studentId, template, examResults, examSchedules, exams);
+                const stats = calculateReportCardStats(filled, template);
+                setFormData((prev: any) => ({
+                  ...prev,
+                  termData: filled,
+                  aggregate: stats.aggregate,
+                  percentage: stats.percentage,
+                  result: stats.result
+                }));
+                alert("Successfully filled marks from the examination records!");
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+              title="Pull marks and calculate scores automatically from database exams"
+            >
+              <Sparkles size={16} /> Auto-Fill from Exams
+            </button>
             <button 
               onClick={() => setPreviewMode(!previewMode)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${previewMode ? 'bg-primary text-white' : 'bg-slate-100 text-text-sub hover:bg-primary/10 hover:text-primary'}`}
@@ -2794,8 +2953,8 @@ const FileUpload = ({ label, icon: Icon = Upload, required = false, onChange, pr
 };
 
 const Attendance = ({ students, attendance, setAttendance, masterData, currentUser, supabase, teacherAssignments, setSelectedStudentQR, staffAttendance, schoolProfile }: any) => {
-  const isManagementRole = currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff' || currentUser?.role === 'warden' || currentUser?.role === 'accountant';
-  const isEmployee = currentUser?.role === 'teacher' || currentUser?.role === 'staff' || currentUser?.role === 'warden' || currentUser?.role === 'accountant';
+  const isManagementRole = currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'teacher' || currentUser?.role === 'staff' || currentUser?.role === 'warden' || currentUser?.role === 'accountant' || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office';
+  const isEmployee = currentUser?.role === 'teacher' || currentUser?.role === 'staff' || currentUser?.role === 'warden' || currentUser?.role === 'accountant' || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office';
 
   const [activeTab, setActiveTab] = useState<'scan' | 'manual' | 'history' | 'my-attendance'>(
     (currentUser?.role === 'student' || currentUser?.role === 'parent') ? 'my-attendance' : 'scan'
@@ -6789,13 +6948,15 @@ const FeeManagement = ({
   const filteredStudentsForCollection = sortStudentsList(
     students.filter((s: any) => {
       const searchVal = (searchFilters.search || '').trim().toLowerCase();
+      const searchWords = searchVal.split(/\s+/).filter(Boolean);
+      const matchesSearch = searchWords.length === 0 || searchWords.every(word => 
+        (s.studentId || '').toLowerCase().includes(word) ||
+        (s.name || '').toLowerCase().includes(word) ||
+        (s.surname || '').toLowerCase().includes(word)
+      );
       return (!searchFilters.class || s.class === searchFilters.class) &&
              (!searchFilters.section || s.section === searchFilters.section) &&
-             (!searchFilters.search || 
-               (s.studentId || '').toLowerCase().includes(searchVal) || 
-               (s.name || '').toLowerCase().includes(searchVal) || 
-               (s.surname || '').toLowerCase().includes(searchVal)
-             );
+             matchesSearch;
     }),
     masterData.classes
   );
@@ -6803,16 +6964,39 @@ const FeeManagement = ({
   const filteredStudentsForLedger = sortStudentsList(
     students.filter((s: any) => {
       const searchVal = (ledgerSearchFilters.search || '').trim().toLowerCase();
+      const searchWords = searchVal.split(/\s+/).filter(Boolean);
+      const matchesSearch = searchWords.length === 0 || searchWords.every(word => 
+        (s.studentId || '').toLowerCase().includes(word) ||
+        (s.name || '').toLowerCase().includes(word) ||
+        (s.surname || '').toLowerCase().includes(word)
+      );
       return (!ledgerSearchFilters.class || s.class === ledgerSearchFilters.class) &&
              (!ledgerSearchFilters.section || s.section === ledgerSearchFilters.section) &&
-             (!ledgerSearchFilters.search || 
-               (s.studentId || '').toLowerCase().includes(searchVal) || 
-               (s.name || '').toLowerCase().includes(searchVal) || 
-               (s.surname || '').toLowerCase().includes(searchVal)
-             );
+             matchesSearch;
     }),
     masterData.classes
   );
+
+  // Auto-select student if exactly 1 matches active search filters
+  useEffect(() => {
+    const hasActiveFilter = !!(searchFilters.class || searchFilters.section || (searchFilters.search || '').trim());
+    if (hasActiveFilter && filteredStudentsForCollection.length === 1) {
+      const singleStudent = filteredStudentsForCollection[0];
+      if (selectedStudent?.studentId !== singleStudent.studentId) {
+        setSelectedStudent(singleStudent);
+      }
+    }
+  }, [filteredStudentsForCollection, searchFilters, selectedStudent]);
+
+  useEffect(() => {
+    const hasActiveFilter = !!(ledgerSearchFilters.class || ledgerSearchFilters.section || (ledgerSearchFilters.search || '').trim());
+    if (hasActiveFilter && filteredStudentsForLedger.length === 1) {
+      const singleStudent = filteredStudentsForLedger[0];
+      if (selectedLedgerStudent?.studentId !== singleStudent.studentId) {
+        setSelectedLedgerStudent(singleStudent);
+      }
+    }
+  }, [filteredStudentsForLedger, ledgerSearchFilters, selectedLedgerStudent]);
 
   const getMonthlyDuesBreakdown = (student: any, month: string) => {
     if (!student) return {};
@@ -7263,6 +7447,45 @@ const FeeManagement = ({
                   </button>
                 </div>
               </div>
+
+              {filteredStudentsForCollection.length > 0 && (searchFilters.class || searchFilters.section || (searchFilters.search || '').trim()) && (
+                <div className="mb-6 p-4 bg-primary/5 border border-primary/10 rounded-3xl animate-fade-in shadow-inner">
+                  <p className="text-[10px] font-black text-primary uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Quick Select Student ({filteredStudentsForCollection.length} matching)
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto pr-1">
+                    {filteredStudentsForCollection.slice(0, 16).map((s: any) => {
+                      const isSelected = selectedStudent?.studentId === s.studentId;
+                      return (
+                        <button
+                          key={s.studentId}
+                          type="button"
+                          onClick={() => setSelectedStudent(s)}
+                          className={`p-3 rounded-2xl text-left border text-xs transition-all duration-200 active:scale-95 ${
+                            isSelected 
+                              ? 'bg-primary border-primary text-white font-bold shadow-lg shadow-primary/25 scale-[1.02]' 
+                              : 'bg-white hover:bg-slate-50 border-slate-200 text-text-main shadow-sm'
+                          }`}
+                        >
+                          <div className="truncate font-bold text-[13px]">{s.name} {s.surname}</div>
+                          <div className={`text-[10px] truncate font-medium mt-0.5 ${isSelected ? 'text-white/80' : 'text-text-sub'}`}>
+                            Class: {s.class}-{s.section}
+                          </div>
+                          <div className={`text-[9px] font-mono mt-0.5 tracking-wider ${isSelected ? 'text-white/70' : 'text-text-sub/60'}`}>
+                            ID: {s.studentId}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {filteredStudentsForCollection.length > 16 && (
+                    <p className="text-[9px] text-text-sub text-center mt-2.5 font-medium italic">
+                      Showing first 16 students. Refine filters above to see more, or select from the dropdown below.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -8225,6 +8448,45 @@ const FeeManagement = ({
                       </button>
                     </div>
                   </div>
+
+                  {filteredStudentsForLedger.length > 0 && (ledgerSearchFilters.class || ledgerSearchFilters.section || (ledgerSearchFilters.search || '').trim()) && (
+                    <div className="mb-6 p-4 bg-primary/5 border border-primary/10 rounded-3xl animate-fade-in shadow-inner">
+                      <p className="text-[10px] font-black text-primary uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Quick Select Student ({filteredStudentsForLedger.length} matching)
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-48 overflow-y-auto pr-1">
+                        {filteredStudentsForLedger.slice(0, 16).map((s: any) => {
+                          const isSelected = selectedLedgerStudent?.studentId === s.studentId;
+                          return (
+                            <button
+                              key={s.studentId}
+                              type="button"
+                              onClick={() => setSelectedLedgerStudent(s)}
+                              className={`p-3 rounded-2xl text-left border text-xs transition-all duration-200 active:scale-95 ${
+                                isSelected 
+                                  ? 'bg-primary border-primary text-white font-bold shadow-lg shadow-primary/25 scale-[1.02]' 
+                                  : 'bg-white hover:bg-slate-50 border-slate-200 text-text-main shadow-sm'
+                              }`}
+                            >
+                              <div className="truncate font-bold text-[13px]">{s.name} {s.surname}</div>
+                              <div className={`text-[10px] truncate font-medium mt-0.5 ${isSelected ? 'text-white/80' : 'text-text-sub'}`}>
+                                Class: {s.class}-{s.section}
+                              </div>
+                              <div className={`text-[9px] font-mono mt-0.5 tracking-wider ${isSelected ? 'text-white/70' : 'text-text-sub/60'}`}>
+                                ID: {s.studentId}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {filteredStudentsForLedger.length > 16 && (
+                        <p className="text-[9px] text-text-sub text-center mt-2.5 font-medium italic">
+                          Showing first 16 students. Refine filters above to see more, or select from the dropdown below.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex flex-col md:flex-row gap-6 items-end">
                     <div className="flex-1 space-y-2">
@@ -11560,7 +11822,7 @@ const Class360View = ({ students, masterData, attendance, feeTransactions, getSt
 };
 
 const StaffAttendanceModule = ({ staff, staffAttendance, setStaffAttendance, currentUser, supabase }: any) => {
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super-admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office';
   const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'qr-code'>(
     isAdmin ? 'qr-code' : 'scan'
   );
@@ -12814,18 +13076,17 @@ const HumanResourcePanel = ({ staff, setStaff, departments, setDepartments, desi
           throw saveErr;
         }
 
-        // Create user for login
-        const { error: userError } = await supabase
-          .from('users')
-          .insert([{
-            id: staffId,
-            username: staffId,
-            name: `${newStaff.name} ${newStaff.surname}`,
-            password: newStaff.password || '123',
-            role: newStaff.role?.toLowerCase(),
-            permissions: newStaff.role?.toLowerCase() === 'teacher' ? ['attendance', 'homework', 'syllabus', 'leaves'] : []
-          }]);
-
+        // Create user for login resiliently to handle PostgREST schema cache issues
+        const userPayload = {
+          id: staffId,
+          username: staffId,
+          name: `${newStaff.name} ${newStaff.surname}`,
+          password: newStaff.password || '123',
+          role: newStaff.role?.toLowerCase(),
+          permissions: newStaff.role?.toLowerCase() === 'teacher' ? ['attendance', 'homework', 'syllabus', 'leaves'] : []
+        };
+        
+        const userError = await insertUserResiliently(supabase, userPayload);
         if (userError) throw userError;
 
         // Update local users state for immediate login capability
@@ -14058,6 +14319,20 @@ const CommunicatePanel = ({ notifications, setNotifications, notices, setNotices
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [recipientMobile, setRecipientMobile] = useState('');
   const [messageBody, setMessageBody] = useState('');
+  const [isWhatsAppConnected, setIsWhatsAppConnected] = useState(false);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const res = await fetch("/api/whatsapp/status");
+        const data = await res.json();
+        setIsWhatsAppConnected(data.status === "Connected");
+      } catch (e) {
+        console.error("[CommunicatePanel] WhatsApp status check failed:", e);
+      }
+    };
+    checkStatus();
+  }, [activeTab]);
 
   const handleAddTemplate = async () => {
     if (!newTemplate.name || !newTemplate.body) {
@@ -14131,9 +14406,32 @@ const CommunicatePanel = ({ notifications, setNotifications, notices, setNotices
     }
   };
 
-  const handleSendWhatsApp = () => {
+  const handleSendWhatsApp = async () => {
     if (!recipientMobile || !messageBody) return;
     const cleanMobile = recipientMobile.replace(/\D/g, '');
+    
+    if (isWhatsAppConnected) {
+      if (confirm("WhatsApp is linked to this software. Send this message automatically in the background?")) {
+        try {
+          const res = await fetch("/api/whatsapp/send-message", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: cleanMobile, message: messageBody })
+          });
+          const data = await res.json();
+          if (data.success) {
+            alert("Message sent successfully via the ERP WhatsApp Gateway!");
+            return;
+          } else {
+            alert("Failed to send automatically: " + data.error + ". Falling back to manual WhatsApp...");
+          }
+        } catch (e: any) {
+          console.error(e);
+          alert("Error sending automatically. Falling back to manual WhatsApp...");
+        }
+      }
+    }
+    
     const url = `https://wa.me/${cleanMobile.length === 10 ? '91' + cleanMobile : cleanMobile}?text=${encodeURIComponent(messageBody)}`;
     window.open(url, '_blank');
   };
@@ -16989,11 +17287,10 @@ const schoolMigrations = `
     }
 
     if (isNotAdmin && view === 'staff-attendance') {
-      setView('dashboard');
-    }
-
-    if (isNotAdmin && view === 'attendance' && currentUser?.role !== 'teacher') {
-      setView('dashboard');
+      const isReceptionist = currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office';
+      if (!isReceptionist) {
+        setView('dashboard');
+      }
     }
 
     const isFrontOfficeOrAdmin = currentUser?.role === 'admin' || 
@@ -17244,90 +17541,11 @@ const schoolMigrations = `
       return;
     }
     try {
-      // Prepare all master tables to fetch
-      const tables = ['categories', 'castes', 'religions', 'titles', 'classes', 'sections', 'subjects', 'genders', 'departments', 'designations'];
-
-      // Execute all 38+ table queries in a single concurrent Promise.all batch
-      const [
-        usersRes,
-        enquiriesRes,
-        visitorsRes,
-        complaintsRes,
-        incomeHeadsRes,
-        expenseHeadsRes,
-        incomesRes,
-        expensesRes,
-        deptRes,
-        desigRes,
-        profileRes,
-        sessionsRes,
-        camerasRes,
-        studentsRes,
-        fTypesRes,
-        fMasterRes,
-        feeDataRes,
-        cEntriesRes,
-        staffRes,
-        sLeavesRes,
-        sAttendanceRes,
-        noticesDataRes,
-        commTemplatesRes,
-        tTableRes,
-        tAssignmentsRes,
-        syllabusDataRes,
-        homeworkDataRes,
-        studAttendanceRes,
-        examsDataRes,
-        eSchedulesRes,
-        eResultsRes,
-        rTemplatesRes,
-        rCardsRes,
-        hRoomsRes,
-        hStaffRes,
-        hBedsRes,
-        hAttendanceRes,
-        cEventsRes,
-        ...masterResults
-      ] = await Promise.all([
+      // 1. Fetch only essential login tables first for instant startup
+      const [usersRes, profileRes, sessionsRes] = await Promise.all([
         supabase.from('users').select('*'),
-        supabase.from('enquiries').select('*').order('created_at', { ascending: false }),
-        supabase.from('visitors').select('*').order('created_at', { ascending: false }),
-        supabase.from('complaints').select('*').order('created_at', { ascending: false }),
-        supabase.from('income_heads').select('*'),
-        supabase.from('expense_heads').select('*'),
-        supabase.from('incomes').select('*'),
-        supabase.from('expenses').select('*'),
-        supabase.from('departments').select('*'),
-        supabase.from('designations').select('*'),
         supabase.from('school_profile').select('*'),
-        supabase.from('academic_sessions').select('year'),
-        supabase.from('camera_settings').select('*'),
-        supabase.from('students').select('*'),
-        supabase.from('fee_types').select('*'),
-        supabase.from('fee_master').select('*'),
-        supabase.from('fee_collections').select('*'),
-        supabase.from('contra_entries').select('*').order('created_at', { ascending: false }),
-        supabase.from('staff').select('*'),
-        supabase.from('staff_leave_requests').select('*'),
-        supabase.from('staff_attendance').select('*').order('attendance_date', { ascending: false }),
-        supabase.from('notices').select('*').order('date', { ascending: false }),
-        supabase.from('communication_templates').select('*'),
-        supabase.from('time_table').select('*'),
-        supabase.from('teacher_assignments').select('*'),
-        supabase.from('syllabus').select('*'),
-        supabase.from('homework').select('*'),
-        supabase.from('student_attendance').select('*').order('created_at', { ascending: false }),
-        supabase.from('exams').select('*'),
-        supabase.from('exam_schedules').select('*'),
-        supabase.from('exam_results').select('*'),
-        supabase.from('report_card_templates').select('*'),
-        supabase.from('report_cards').select('*'),
-        supabase.from('hostel_rooms').select('*'),
-        supabase.from('hostel_staff').select('*'),
-        supabase.from('hostel_beds').select('*'),
-        supabase.from('hostel_attendance').select('*'),
-        supabase.from('calendar_events').select('*'),
-        ...tables.map(table => supabase!.from(table).select('name'))
+        supabase.from('academic_sessions').select('year')
       ]);
 
       // 1. Process Users
@@ -17364,6 +17582,133 @@ const schoolMigrations = `
           return finalUsers;
         });
       }
+
+      // 6. Process School Profile
+      const profile = profileRes.data?.find((p: any) => p.id === '00000000-0000-0000-0000-000000000001') || profileRes.data?.[0];
+      if (profile) {
+        let loadedName = profile.school_name || 'SUBRAI MISSION CONVENT SCHOOL';
+        setSchoolProfile((prev: any) => ({
+          ...prev,
+          id: profile.id,
+          name: loadedName,
+          contact: profile.contact_number || prev.contact,
+          gst: profile.gst_number || prev.gst,
+          regNo: profile.registration_number || prev.regNo,
+          email: profile.school_email || prev.email,
+          state: profile.state || prev.state,
+          currentSession: profile.current_academic_session || prev.currentSession,
+          wardenPanelId: profile.warden_id || prev.wardenPanelId,
+          wardenPanelPassword: profile.warden_password || prev.wardenPanelPassword,
+          accountantPanelId: profile.accountant_id || prev.accountantPanelId,
+          accountantPanelPassword: profile.accountant_password || prev.accountantPanelPassword,
+          address: profile.school_address || prev.address,
+          logo: profile.school_logo_url || prev.logo,
+          principalSignature: profile.principal_signature_url || prev.principalSignature,
+          classTeacherSignature: profile.class_teacher_signature_url || prev.classTeacherSignature,
+          schoolStamp: profile.official_stamp_url || prev.schoolStamp,
+          feeQrUrl: profile.fee_qr_url || prev.feeQrUrl,
+          feeUpiId: profile.fee_upi_id || prev.feeUpiId,
+        }));
+        setTaxes(profile.tax_percentage || 0);
+      }
+
+      // 7. Process Academic Sessions
+      const sessionsData = sessionsRes.data;
+      if (sessionsData && sessionsData.length > 0) {
+        setSchoolProfile((prev: any) => ({ ...prev, sessions: sessionsData.map((s: any) => s.year) }));
+      }
+
+      // Set initial loaded state to true IMMEDIATELY so the login/app loads instantly!
+      setIsInitialDataLoaded(true);
+
+      // 2. Fetch all remaining secondary tables asynchronously in the background
+      fetchRemainingData();
+    } catch (err: any) {
+      console.error('Error in fetchAllData:', err);
+      setIsInitialDataLoaded(true); // Fallback so app is still usable
+    }
+  }
+
+  async function fetchRemainingData() {
+    if (!supabase) return;
+    try {
+      const tables = ['categories', 'castes', 'religions', 'titles', 'classes', 'sections', 'subjects', 'genders', 'departments', 'designations'];
+      
+      const [
+        enquiriesRes,
+        visitorsRes,
+        complaintsRes,
+        incomeHeadsRes,
+        expenseHeadsRes,
+        incomesRes,
+        expensesRes,
+        deptRes,
+        desigRes,
+        camerasRes,
+        studentsRes,
+        fTypesRes,
+        fMasterRes,
+        feeDataRes,
+        cEntriesRes,
+        staffRes,
+        sLeavesRes,
+        sAttendanceRes,
+        noticesDataRes,
+        commTemplatesRes,
+        tTableRes,
+        tAssignmentsRes,
+        syllabusDataRes,
+        homeworkDataRes,
+        studAttendanceRes,
+        examsDataRes,
+        eSchedulesRes,
+        eResultsRes,
+        rTemplatesRes,
+        rCardsRes,
+        hRoomsRes,
+        hStaffRes,
+        hBedsRes,
+        hAttendanceRes,
+        cEventsRes,
+        ...masterResults
+      ] = await Promise.all([
+        supabase.from('enquiries').select('*').order('created_at', { ascending: false }),
+        supabase.from('visitors').select('*').order('created_at', { ascending: false }),
+        supabase.from('complaints').select('*').order('created_at', { ascending: false }),
+        supabase.from('income_heads').select('*'),
+        supabase.from('expense_heads').select('*'),
+        supabase.from('incomes').select('*'),
+        supabase.from('expenses').select('*'),
+        supabase.from('departments').select('*'),
+        supabase.from('designations').select('*'),
+        supabase.from('camera_settings').select('*'),
+        supabase.from('students').select('*'),
+        supabase.from('fee_types').select('*'),
+        supabase.from('fee_master').select('*'),
+        supabase.from('fee_collections').select('*'),
+        supabase.from('contra_entries').select('*').order('created_at', { ascending: false }),
+        supabase.from('staff').select('*'),
+        supabase.from('staff_leave_requests').select('*'),
+        supabase.from('staff_attendance').select('*').order('attendance_date', { ascending: false }),
+        supabase.from('notices').select('*').order('date', { ascending: false }),
+        supabase.from('communication_templates').select('*'),
+        supabase.from('time_table').select('*'),
+        supabase.from('teacher_assignments').select('*'),
+        supabase.from('syllabus').select('*'),
+        supabase.from('homework').select('*'),
+        supabase.from('student_attendance').select('*').order('created_at', { ascending: false }),
+        supabase.from('exams').select('*'),
+        supabase.from('exam_schedules').select('*'),
+        supabase.from('exam_results').select('*'),
+        supabase.from('report_card_templates').select('*'),
+        supabase.from('report_cards').select('*'),
+        supabase.from('hostel_rooms').select('*'),
+        supabase.from('hostel_staff').select('*'),
+        supabase.from('hostel_beds').select('*'),
+        supabase.from('hostel_attendance').select('*'),
+        supabase.from('calendar_events').select('*'),
+        ...tables.map(table => supabase!.from(table).select('name'))
+      ]);
 
       // 2. Process Front Office Data
       const enquiriesData = enquiriesRes.data;
@@ -17441,41 +17786,6 @@ const schoolMigrations = `
 
       const desigData = desigRes.data;
       if (desigData) setDesignations(desigData);
-
-      // 6. Process School Profile
-      const profile = profileRes.data?.find((p: any) => p.id === '00000000-0000-0000-0000-000000000001') || profileRes.data?.[0];
-      if (profile) {
-        let loadedName = profile.school_name || 'SUBRAI MISSION CONVENT SCHOOL';
-        setSchoolProfile((prev: any) => ({
-          ...prev,
-          id: profile.id,
-          name: loadedName,
-          contact: profile.contact_number || prev.contact,
-          gst: profile.gst_number || prev.gst,
-          regNo: profile.registration_number || prev.regNo,
-          email: profile.school_email || prev.email,
-          state: profile.state || prev.state,
-          currentSession: profile.current_academic_session || prev.currentSession,
-          wardenPanelId: profile.warden_id || prev.wardenPanelId,
-          wardenPanelPassword: profile.warden_password || prev.wardenPanelPassword,
-          accountantPanelId: profile.accountant_id || prev.accountantPanelId,
-          accountantPanelPassword: profile.accountant_password || prev.accountantPanelPassword,
-          address: profile.school_address || prev.address,
-          logo: profile.school_logo_url || prev.logo,
-          principalSignature: profile.principal_signature_url || prev.principalSignature,
-          classTeacherSignature: profile.class_teacher_signature_url || prev.classTeacherSignature,
-          schoolStamp: profile.official_stamp_url || prev.schoolStamp,
-          feeQrUrl: profile.fee_qr_url || prev.feeQrUrl,
-          feeUpiId: profile.fee_upi_id || prev.feeUpiId,
-        }));
-        setTaxes(profile.tax_percentage || 0);
-      }
-
-      // 7. Process Academic Sessions
-      const sessionsData = sessionsRes.data;
-      if (sessionsData && sessionsData.length > 0) {
-        setSchoolProfile((prev: any) => ({ ...prev, sessions: sessionsData.map((s: any) => s.year) }));
-      }
 
       // 8. Process Camera Settings
       const cameras = camerasRes.data;
@@ -17810,7 +18120,7 @@ const schoolMigrations = `
 
       const eResults = eResultsRes.data;
       if (eResults) setExamResults(eResults.map(er => {
-        // Find matching exam schedule by comparing exam ID/name and subject, matching with the student's class and section
+        // Find matching exam schedule
         const studentObj = studentsData ? studentsData.find((st: any) => st.student_id === er.student_id) : null;
         const matchingSchedule = eSchedules ? eSchedules.find((es: any) => {
           const matchExam = (es.exam_id === er.exam_name || es.exam_name === er.exam_name);
@@ -17928,10 +18238,9 @@ const schoolMigrations = `
         type: ce.event_type,
         color: ce.color
       })));
-    } catch (err: any) {
-      console.error('Error in fetchAllData:', err);
-    } finally {
-      setIsInitialDataLoaded(true);
+
+    } catch (err) {
+      console.error('Error fetching remaining background data:', err);
     }
   }
 
@@ -18776,9 +19085,7 @@ const schoolMigrations = `
           role: 'student',
           permissions: []
         };
-        await supabase
-          .from('users')
-          .insert([studentUser]);
+        await insertUserResiliently(supabase, studentUser);
         
         // Update local users state
         setUsers(prev => [...prev, studentUser]);
@@ -18793,9 +19100,7 @@ const schoolMigrations = `
           role: 'parent',
           permissions: []
         };
-        await supabase
-          .from('users')
-          .insert([parentUser]);
+        await insertUserResiliently(supabase, parentUser);
         
         // Update local users state
         setUsers(prev => [...prev, parentUser]);
@@ -19320,7 +19625,7 @@ const schoolMigrations = `
               />
               <SidebarItem 
                 icon={UserCheck} 
-                label={isSidebarOpen ? "Attendance" : ""} 
+                label={isSidebarOpen ? "Student Attendance" : ""} 
                 active={view === 'attendance'} 
                 onClick={() => setView('attendance')} 
                 isSidebarOpen={isSidebarOpen}
@@ -19449,7 +19754,7 @@ const schoolMigrations = `
                       )}
                     </>
                   )}
-                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'receptionist' || currentUser?.role === 'front-office' || currentUser?.role === 'front_office') && (
                     <SidebarItem 
                       icon={QrCode} 
                       label={isSidebarOpen ? "Staff Attendance" : ""} 
@@ -19496,15 +19801,13 @@ const schoolMigrations = `
                   isSidebarOpen={isSidebarOpen}
                 />
               )}
-              {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') && (
-                <SidebarItem 
-                  icon={UserCheck} 
-                  label={isSidebarOpen ? "Attendance" : ""} 
-                  active={view === 'attendance'} 
-                  onClick={() => setView('attendance')} 
-                  isSidebarOpen={isSidebarOpen}
-                />
-              )}
+              <SidebarItem 
+                icon={UserCheck} 
+                label={isSidebarOpen ? "Student Attendance" : ""} 
+                active={view === 'attendance'} 
+                onClick={() => setView('attendance')} 
+                isSidebarOpen={isSidebarOpen}
+              />
               {(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || currentUser?.role === 'staff') && (
                 <SidebarItem 
                   icon={ClipboardList} 
@@ -25160,28 +25463,80 @@ const ExaminationModule = ({
     if (selectedStudentIds.length === 0) return;
     if (!confirm(`Are you sure you want to ${isPublished ? 'Publish' : 'Mark as Draft'} ${selectedStudentIds.length} report cards?`)) return;
 
+    const template = (reportCardTemplates || []).find((t: any) => t.subjects && t.subjects.length > 0) || (reportCardTemplates || [])[0];
+
     try {
       const successfulIds: string[] = [];
       const updatedReports = [...reportCards];
 
       for (const studentId of selectedStudentIds) {
         const existingReport = updatedReports.find(rc => rc.studentId === studentId);
-        if (!existingReport) continue;
+        
+        if (existingReport) {
+          // Update existing
+          const { error } = await supabase
+            .from('report_cards')
+            .update({ is_published: isPublished })
+            .eq('id', existingReport.id);
 
-        const { error } = await supabase
-          .from('report_cards')
-          .update({ is_published: isPublished })
-          .eq('id', existingReport.id);
+          if (!error) {
+            successfulIds.push(studentId);
+            existingReport.isPublished = isPublished;
+          }
+        } else {
+          // Create new!
+          if (!template) {
+            // Cannot create without a template
+            continue;
+          }
 
-        if (!error) {
-          successfulIds.push(studentId);
-          existingReport.isPublished = isPublished;
+          // Let's pre-populate termData from examResults
+          const termData = autoFillFromExams(studentId, template, examResults, examSchedules, exams);
+          const stats = calculateReportCardStats(termData, template);
+
+          const payload = {
+            student_id: studentId,
+            template_id: template.id,
+            term_data: termData,
+            result: stats.result,
+            aggregate: parseFloat(stats.aggregate) || 0,
+            percentage: parseFloat(stats.percentage) || 0,
+            rank: '',
+            teacher_comments: 'Good effort.',
+            promotion_status: 'Pass/Promoted',
+            is_published: isPublished
+          };
+
+          const { data: inserted, error } = await supabase
+            .from('report_cards')
+            .insert([payload])
+            .select();
+
+          if (!error && inserted && inserted.length > 0) {
+            const newRC = {
+              ...inserted[0],
+              studentId: inserted[0].student_id,
+              templateId: inserted[0].template_id,
+              termData: inserted[0].term_data,
+              promotionStatus: inserted[0].promotion_status,
+              isPublished: inserted[0].is_published,
+              aggregate: inserted[0].aggregate?.toString() || '0.0',
+              percentage: inserted[0].percentage?.toString() || '0.0',
+              result: inserted[0].result || 'Pass'
+            };
+            updatedReports.push(newRC);
+            successfulIds.push(studentId);
+          }
         }
       }
 
       setReportCards(updatedReports);
       setSelectedStudentIds([]);
-      alert(`Successfully updated ${successfulIds.length} report cards.`);
+      if (successfulIds.length === 0 && !template) {
+        alert('Please create a report card template first before generating report cards.');
+      } else {
+        alert(`Successfully generated/updated ${successfulIds.length} report cards.`);
+      }
     } catch (err) {
       console.error('Error in bulk action:', err);
       alert('Error performing bulk action');
@@ -26102,7 +26457,7 @@ const ExaminationModule = ({
                           <h4 className="font-bold text-lg">{t.name}</h4>
                           <p className="text-sm text-text-sub">{(t.terms || []).length} Terms | {(t.subjects || []).length} Subjects</p>
                         </div>
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                        <div className="flex items-center gap-2 transition-all">
                           <button 
                             onClick={() => {
                               setEditingTemplateId(t.id);
@@ -26264,7 +26619,7 @@ const ExaminationModule = ({
                                 )}
                               </td>
                               <td className="py-4 px-4 text-right rounded-r-2xl">
-                                <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                <div className="flex items-center justify-end gap-2 transition-all">
                                   <button 
                                     disabled={reportCardTemplates.length === 0}
                                     onClick={() => setSelectedReportStudent(student)}
@@ -26321,6 +26676,9 @@ const ExaminationModule = ({
                 template={(reportCardTemplates || []).find((t: any) => t.subjects && t.subjects.length > 0) || (reportCardTemplates || [])[0]}
                 reportCard={(reportCards || []).find((rc: any) => rc.studentId === selectedReportStudent.studentId)}
                 schoolProfile={schoolProfile}
+                examResults={examResults}
+                examSchedules={examSchedules}
+                exams={exams}
                 onClose={() => setSelectedReportStudent(null)}
                 onSave={async (data: any) => {
                   try {
