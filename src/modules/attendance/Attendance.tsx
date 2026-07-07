@@ -165,6 +165,15 @@ export const Attendance = ({
 
   // --- Student Attendance Commands ---
   const handleMarkStudent = async (student: Student, status: 'Present' | 'Absent' | 'Late' | 'Leave', method = 'Manual') => {
+    const exists = attendance.find(a => 
+      a.studentId === student.studentId && 
+      (a.date === attendanceDate || a.date === new Date(attendanceDate).toISOString().split('T')[0])
+    );
+    if (exists) {
+      triggerNotif('Attendance already marked for ' + student.name + ' on this date.', true);
+      return;
+    }
+
     setSavingId('st_' + student.studentId);
     try {
       const locationInfo = await getIPAndLocation();
@@ -242,6 +251,16 @@ export const Attendance = ({
 
   // --- Staff & Teachers Commands ---
   const handleMarkStaff = async (staffMember: any, status: 'Present' | 'Absent' | 'Late', method = 'Manual') => {
+    const targetStaffId = staffMember.staffId || staffMember.id;
+    const exists = staffAttendance.find(sa => 
+      sa.staffId === targetStaffId && 
+      (sa.date === attendanceDate || sa.date === new Date(attendanceDate).toISOString().split('T')[0])
+    );
+    if (exists) {
+      triggerNotif('Attendance already marked for ' + staffMember.name + ' on this date.', true);
+      return;
+    }
+
     setSavingId('sf_' + staffMember.id);
     try {
       const locationInfo = await getIPAndLocation();
@@ -313,6 +332,15 @@ export const Attendance = ({
 
   // --- Hostel Attendance Commands ---
   const handleMarkHostel = async (student: Student, status: 'Present' | 'Absent' | 'Late' | 'Leave') => {
+    const exists = hostelAttendance.find(ha => 
+      ha.studentId === student.studentId && 
+      (ha.date === attendanceDate || ha.date === new Date(attendanceDate).toISOString().split('T')[0])
+    );
+    if (exists) {
+      triggerNotif('Hostel attendance already marked for ' + student.name + ' on this date.', true);
+      return;
+    }
+
     setSavingId('hs_' + student.studentId);
     try {
       const locationInfo = await getIPAndLocation();

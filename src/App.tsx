@@ -3171,13 +3171,17 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     }
   };
 
-  function onScanSuccess(decodedText: string) {
+  async function onScanSuccess(decodedText: string) {
     const id = extractIdFromQR(decodedText, 'id');
     const student = students.find((s: any) => s.studentId === id);
     if (student) {
-      markAttendance(student, 'Present');
-      playBeep();
-      setScanResult(`Attendance marked for ${student.name} ${student.surname}`);
+      const res = await markAttendance(student, 'Present');
+      if (res && res.alreadyMarked) {
+        setScanResult(`Already Marked: ${student.name} ${student.surname}`);
+      } else if (res && res.success) {
+        playBeep();
+        setScanResult(`Attendance marked for ${student.name} ${student.surname}`);
+      }
       setTimeout(() => setScanResult(null), 3000);
     } else {
       setScanResult("Invalid Student QR Code");
@@ -3192,6 +3196,16 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
   const markAttendance = async (student: any, status: Attendance['status']) => {
     const today = getTodayDate();
     const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const alreadyMarked = attendance.find((a: any) => 
+      a.studentId === student.studentId && 
+      (a.date === today || a.date === formatDate(today))
+    );
+
+    if (alreadyMarked) {
+      alert(`Attendance has already been marked for ${student.name} ${student.surname} today.`);
+      return { success: false, alreadyMarked: true };
+    }
     
     let ip = 'Unknown';
     let location = 'Unknown';
@@ -3230,7 +3244,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
       if (error) {
         console.error('Error saving student attendance:', error);
         alert('Failed to save attendance to database');
-        return;
+        return { success: false };
       }
 
       if (data) {
@@ -3251,6 +3265,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           }
         });
       }
+      return { success: true };
     } else {
       setAttendance((prev: Attendance[]) => {
         const existing = prev.find((a: any) => a.studentId === student.studentId && (a.date === today || a.date === formatDate(today)));
@@ -3275,6 +3290,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           return [newEntry, ...prev];
         }
       });
+      return { success: true };
     }
   };
 
@@ -10495,8 +10511,14 @@ const TeacherPanel = ({
   );
 };
 
-const StudentPanel = ({ students, examResults, examSchedules, reportCards, reportCardTemplates, homeworks, syllabuses, leaveRequests, setLeaveRequests, notifications, feeTransactions, feeMaster, currentUser, schoolProfile }: any) => {
-  const [activeTab, setActiveTab] = useState<'progress' | 'homework' | 'fees' | 'exams'>('progress');
+const StudentPanel = ({ students, examResults, examSchedules, reportCards, reportCardTemplates, homeworks, syllabuses, leaveRequests, setLeaveRequests, notifications, feeTransactions, feeMaster, currentUser, schoolProfile, attendance }: any) => {
+  const [activeTab, setActiveTab] = useState<'progress' | 'homework' | 'fees' | 'exams' | 'attendance'>('progress');
+  
+  const myAttendanceRecords = (attendance || []).filter((a: any) => a.studentId === (currentUser.studentId || currentUser.id));
+  const presentCount = myAttendanceRecords.filter((a: any) => a.status === 'Present').length;
+  const absentCount = myAttendanceRecords.filter((a: any) => a.status === 'Absent').length;
+  const totalDays = myAttendanceRecords.length;
+  const attendanceRate = totalDays > 0 ? Math.round((presentCount / totalDays) * 100) : 100;
   const [showHomeworkUploadModal, setShowHomeworkUploadModal] = useState(false);
   const [selectedHomeworkForUpload, setSelectedHomeworkForUpload] = useState<any>(null);
   const [leaveForm, setLeaveForm] = useState({
@@ -10622,6 +10644,7 @@ const StudentPanel = ({ students, examResults, examSchedules, reportCards, repor
           { id: 'homework', label: 'Homework', icon: BookOpen, permission: 'Home Work Assign' },
           { id: 'progress', label: 'Results', icon: GraduationCap, permission: 'Progress Report' },
           { id: 'fees', label: 'Pay Fee', icon: Wallet, permission: 'Fee Structure' },
+          { id: 'attendance', label: 'Attendance', icon: UserCheck, permission: 'all' },
         ].filter(tab => (currentUser?.permissions || []).includes('all') || (currentUser?.permissions || []).includes(tab.permission) || tab.permission === 'all').map((tab) => (
           <button
             key={tab.id}
@@ -10754,17 +10777,17 @@ const StudentPanel = ({ students, examResults, examSchedules, reportCards, repor
               <h3 className="text-lg font-bold mb-6">Attendance Overview</h3>
               <div className="text-center space-y-4">
                 <div className="w-32 h-32 rounded-full border-8 border-primary border-t-slate-100 flex items-center justify-center mx-auto">
-                  <span className="text-2xl font-black text-primary">94%</span>
+                  <span className="text-2xl font-black text-primary">{attendanceRate}%</span>
                 </div>
                 <p className="text-sm font-medium text-text-sub">Overall attendance for this term</p>
                 <div className="grid grid-cols-2 gap-4 pt-4">
                   <div className="p-3 bg-green-50 rounded-xl">
                     <p className="text-xs font-bold text-green-600 uppercase">Present</p>
-                    <p className="text-xl font-black text-green-700">142</p>
+                    <p className="text-xl font-black text-green-700">{presentCount}</p>
                   </div>
                   <div className="p-3 bg-red-50 rounded-xl">
                     <p className="text-xs font-bold text-red-600 uppercase">Absent</p>
-                    <p className="text-xl font-black text-red-700">8</p>
+                    <p className="text-xl font-black text-red-700">{absentCount}</p>
                   </div>
                 </div>
               </div>
@@ -10886,6 +10909,51 @@ const StudentPanel = ({ students, examResults, examSchedules, reportCards, repor
               {feeTransactions.filter((t: any) => t.studentId === myStudent.studentId).length === 0 && (
                 <p className="text-center py-8 text-text-sub">No transaction history found.</p>
               )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'attendance' && (
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-primary">
+              <UserCheck size={20} /> Detailed Attendance Records
+            </h3>
+          </div>
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Date</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Status</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Time</th>
+                    <th className="pb-4 font-bold text-xs uppercase text-text-secondary tracking-wider">Method</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {myAttendanceRecords.map((rec: any, idx: number) => (
+                    <tr key={rec.id || idx} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-4 font-bold">{rec.date || rec.attendanceDate}</td>
+                      <td className="py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          rec.status === 'Present' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {rec.status}
+                        </span>
+                      </td>
+                      <td className="py-4 text-text-sub font-mono text-xs">{rec.time || rec.attendanceTime || '-'}</td>
+                      <td className="py-4 text-text-sub text-xs">{rec.method || 'Manual'}</td>
+                    </tr>
+                  ))}
+                  {myAttendanceRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-12 text-center text-text-sub italic">No attendance records found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </Card>
         </div>
@@ -16532,13 +16600,16 @@ export default function App() {
           setDbStatus('connected');
         }
 
-        if (localStorage.getItem('hope_school_migrations_run_v2') === 'true') {
+        if (localStorage.getItem('hope_school_migrations_run_v3') === 'true') {
           console.log('Database migrations already completed. Skipping for lightning-fast startup!');
           return;
         }
 
         // Consolidated Migrations to reduce RPC calls and potential failures
         const studentMigrations = `
+          ALTER TABLE public.users ADD COLUMN IF NOT EXISTS id TEXT;
+          UPDATE public.users SET id = username WHERE id IS NULL;
+
           ALTER TABLE students ADD COLUMN IF NOT EXISTS academic_session TEXT;
           ALTER TABLE students ADD COLUMN IF NOT EXISTS class_name TEXT;
           ALTER TABLE students ADD COLUMN IF NOT EXISTS section_name TEXT;
@@ -17248,7 +17319,7 @@ const schoolMigrations = `
           const { error: errFinalPolicies } = await supabase.rpc('exec_sql', { sql_query: finalizeRlsPolicies });
           if (errFinalPolicies) console.error('Final RLS Policies consolidation failed:', errFinalPolicies);
           
-          localStorage.setItem('hope_school_migrations_run_v2', 'true');
+          localStorage.setItem('hope_school_migrations_run_v3', 'true');
         } catch (migrationErr) {
           console.error('Migration execution failed:', migrationErr);
         }
@@ -17429,12 +17500,7 @@ const schoolMigrations = `
     
     return Math.max(0, totalDue - settledAmount);
   };
-  const [students, setStudents] = useState<Student[]>([
-    { id: '1', studentId: 'DS-100001', name: 'Aarav', surname: 'Sharma', class: 'Class 10', section: 'A', rollNumber: '1', gender: 'Male', dob: '2010-04-10', email: 'aarav@example.com', residentialAddress: 'New Delhi', studentType: 'Old', session: '2024-25', caste: 'General', category: 'General', fatherName: 'Mr. Sharma', motherName: 'Mrs. Sharma', fatherMobile: '9876543210', motherMobile: '9876543210', bloodGroup: 'O+', emergencyContact: '9876543210', localGuardianContact: '9876543210', allergy: 'None', religion: 'Hindu', hasDisability: false, disabilityDetails: '', relationsInSchool: [] },
-    { id: '2', studentId: 'DS-100002', name: 'Ishaan', surname: 'Verma', class: 'Class 10', section: 'A', rollNumber: '2', gender: 'Male', dob: '2010-06-20', email: 'ishaan@example.com', residentialAddress: 'New Delhi', studentType: 'Old', session: '2024-25', caste: 'General', category: 'General', fatherName: 'Mr. Verma', motherName: 'Mrs. Verma', fatherMobile: '9876543211', motherMobile: '9876543211', bloodGroup: 'A+', emergencyContact: '9876543211', localGuardianContact: '9876543211', allergy: 'None', religion: 'Hindu', hasDisability: false, disabilityDetails: '', relationsInSchool: [] },
-    { id: '3', studentId: 'DS-100003', name: 'Ananya', surname: 'Gupta', class: 'Class 9', section: 'B', rollNumber: '1', gender: 'Female', dob: '2011-04-10', email: 'ananya@example.com', residentialAddress: 'New Delhi', studentType: 'Old', session: '2024-25', caste: 'General', category: 'General', fatherName: 'Mr. Gupta', motherName: 'Mrs. Gupta', fatherMobile: '9876543212', motherMobile: '9876543212', bloodGroup: 'B+', emergencyContact: '9876543212', localGuardianContact: '9876543212', allergy: 'None', religion: 'Hindu', hasDisability: false, disabilityDetails: '', relationsInSchool: [] },
-    { id: '4', studentId: 'DS-100004', name: 'Vihaan', surname: 'Malhotra', class: 'Class 1', section: 'A', rollNumber: '1', gender: 'Male', dob: '2018-08-25', email: 'vihaan@example.com', residentialAddress: 'New Delhi', studentType: 'New', session: '2024-25', caste: 'General', category: 'General', fatherName: 'Mr. Malhotra', motherName: 'Mrs. Malhotra', fatherMobile: '9876543213', motherMobile: '9876543213', bloodGroup: 'AB+', emergencyContact: '9876543213', localGuardianContact: '9876543213', allergy: 'None', religion: 'Hindu', hasDisability: false, disabilityDetails: '', relationsInSchool: [] }
-  ]);
+  const [students, setStudents] = useState<Student[]>([]);
   useEffect(() => {
       }, [students]);
 
@@ -17618,11 +17684,11 @@ const schoolMigrations = `
         setSchoolProfile((prev: any) => ({ ...prev, sessions: sessionsData.map((s: any) => s.year) }));
       }
 
-      // Set initial loaded state to true IMMEDIATELY so the login/app loads instantly!
-      setIsInitialDataLoaded(true);
+      // 2. Fetch all remaining secondary tables (including students) before finalizing load
+      await fetchRemainingData();
 
-      // 2. Fetch all remaining secondary tables asynchronously in the background
-      fetchRemainingData();
+      // Set initial loaded state to true after all data has loaded
+      setIsInitialDataLoaded(true);
     } catch (err: any) {
       console.error('Error in fetchAllData:', err);
       setIsInitialDataLoaded(true); // Fallback so app is still usable
@@ -21244,6 +21310,7 @@ const schoolMigrations = `
                   feeMaster={feeMaster}
                   currentUser={currentUser}
                   schoolProfile={schoolProfile}
+                  attendance={attendance}
                 />
               </motion.div>
             )}
@@ -23123,6 +23190,17 @@ const HostelModule = ({
   };
 
   const handleAttendance = async (studentId: string, status: any) => {
+    const today = new Date().toISOString().split('T')[0];
+    const alreadyMarked = attendance.find((a: any) => 
+      a.studentId === studentId && 
+      (a.date === today || a.date === formatDate(today))
+    );
+
+    if (alreadyMarked) {
+      alert(`Hostel attendance has already been marked for this resident today.`);
+      return;
+    }
+
     const student = students.find((s: any) => s.studentId === studentId);
     let ip = 'Unknown';
     let location = 'Unknown';
@@ -25390,6 +25468,27 @@ const ExaminationModule = ({
   const [reportFilters, setReportFilters] = useState({ class: '', section: '' });
   const [selectedReportStudent, setSelectedReportStudent] = useState<any>(null);
 
+  const matchClassAndSection = (stClass: string, stSection: string, filterClass: string, filterSection: string) => {
+    const normalize = (str: string) => (str || '').trim().toLowerCase().replace(/[\s\-_]/g, '');
+    const c1 = normalize(stClass);
+    const c2 = normalize(filterClass);
+    const s1 = normalize(stSection);
+    const s2 = normalize(filterSection);
+    const matchC = !filterClass || c1 === c2;
+    const matchS = !filterSection || s1 === s2;
+    return matchC && matchS;
+  };
+
+  const defaultTemplate = {
+    id: 'default-template',
+    name: 'Standard Report Card',
+    terms: [
+      { id: 't1', name: '1st Term', subColumns: [{ id: 'm1', name: 'Marks', maxMarks: 100 }] },
+      { id: 't2', name: '2nd Term', subColumns: [{ id: 'm2', name: 'Marks', maxMarks: 100 }] }
+    ],
+    subjects: masterData?.subjects?.length > 0 ? masterData.subjects : ['English', 'Mathematics', 'Science', 'Social Studies', 'Hindi']
+  };
+
   const teacherAssignedClasses = currentUser?.role === 'teacher' 
     ? (teacherAssignments || []).filter((a: any) => 
         a.classTeacher === currentUser.name || 
@@ -25406,8 +25505,7 @@ const ExaminationModule = ({
     : [...new Set((teacherAssignedClasses || []).filter((a: any) => !reportFilters.class || a.class === reportFilters.class).map((a: any) => a.section))];
 
   const filteredStudentsForReport = (students || []).filter((s: any) => {
-    return (!reportFilters.class || s.class === reportFilters.class) &&
-           (!reportFilters.section || s.section === reportFilters.section);
+    return matchClassAndSection(s.class, s.section, reportFilters.class, reportFilters.section);
   });
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
@@ -25445,7 +25543,7 @@ const ExaminationModule = ({
   });
 
   // marks Entry Form
-  const [marksFilters, setMarksFilters] = useState({ class: '', section: '' });
+  const [marksFilters, setMarksFilters] = useState({ class: '', section: '', examId: '', subject: '' });
   const [marksForm, setMarksForm] = useState<any>({});
 
   // Report Card Bulk Actions
@@ -25775,22 +25873,28 @@ const ExaminationModule = ({
     }
   };
 
-  const handleSaveMarks = async (scheduleId: string, studentId: string, studentName: string) => {
+  const handleSaveMarks = async (scheduleId: string, studentId: string, studentName: string, directExamId?: string, directSubject?: string) => {
     const schedule = examSchedules.find((s: any) => s.id === scheduleId);
-    if (!schedule) return;
-    const examName = schedule.examId; 
+    const examName = schedule ? schedule.examId : directExamId;
+    const subjectName = schedule ? schedule.subject : directSubject;
+
+    if (!examName || !subjectName) {
+      alert('Missing Exam or Subject details.');
+      return;
+    }
     
     // Determine default max marks if not entered
-    const defaultMax = (exams || []).find((e: any) => e.id === schedule.examId)?.type?.includes('PT') ? 20 : 
-                       ((exams || []).find((e: any) => e.id === schedule.examId)?.type?.includes('Half') || 
-                        (exams || []).find((e: any) => e.id === schedule.examId)?.type?.includes('Annual')) ? 80 : 100;
+    const defaultMax = (exams || []).find((e: any) => e.id === examName)?.type?.includes('PT') ? 20 : 
+                       ((exams || []).find((e: any) => e.id === examName)?.type?.includes('Half') || 
+                        (exams || []).find((e: any) => e.id === examName)?.type?.includes('Annual')) ? 80 : 100;
 
     const result = (examResults || []).find((r: any) => 
-      (r.examScheduleId === scheduleId || (r.examName === examName && r.subject === schedule.subject)) && 
+      ((scheduleId && r.examScheduleId === scheduleId) || (r.examName === examName && r.subject === subjectName)) && 
       r.studentId === studentId
     );
 
-    const currentFormData = marksForm[`${scheduleId}_${studentId}`] || {};
+    const formKey = scheduleId ? `${scheduleId}_${studentId}` : `${examName}_${subjectName}_${studentId}`;
+    const currentFormData = marksForm[formKey] || {};
     
     // Fallback to existing database result if form field is empty/untouched
     const marksVal = currentFormData.marks !== undefined ? currentFormData.marks : (result?.marks !== undefined ? result?.marks : (result?.marksObtained !== undefined ? result?.marksObtained : ''));
@@ -25805,9 +25909,9 @@ const ExaminationModule = ({
     try {
       const payload: any = {
         exam_name: examName,
-        exam_type: (exams || []).find((e: any) => e.id === schedule.examId)?.type || 'Main',
+        exam_type: (exams || []).find((e: any) => e.id === examName)?.type || 'Main',
         student_id: studentId,
-        subject: schedule.subject,
+        subject: subjectName,
         marks_obtained: Number(marksVal),
         max_marks: Number(maxMarksVal),
         feedback: feedbackVal || ''
@@ -25816,7 +25920,7 @@ const ExaminationModule = ({
       const existingIdx = examResults.findIndex((r: any) => 
         r.examName === examName && 
         r.studentId === studentId && 
-        r.subject === schedule.subject
+        r.subject === subjectName
       );
       
       let dbError = null;
@@ -26197,7 +26301,7 @@ const ExaminationModule = ({
                   <p className="text-sm text-text-sub">Select class and section to enter marks for students.</p>
                 </div>
                 <div className="flex flex-wrap gap-4">
-                  <div className="w-40">
+                  <div className="w-36">
                     <Select 
                       label="Class" 
                       options={availableClasses} 
@@ -26205,7 +26309,7 @@ const ExaminationModule = ({
                       onChange={(e: any) => setMarksFilters({...marksFilters, class: e.target.value})}
                     />
                   </div>
-                  <div className="w-40">
+                  <div className="w-36">
                     <Select 
                       label="Section" 
                       options={(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') ? (masterData?.sections || []) : [...new Set((teacherAssignedClasses || []).filter((a: any) => a.class === marksFilters.class).map((a: any) => a.section))]} 
@@ -26213,107 +26317,254 @@ const ExaminationModule = ({
                       onChange={(e: any) => setMarksFilters({...marksFilters, section: e.target.value})}
                     />
                   </div>
+                  <div className="w-44">
+                    <Select 
+                      label="Exam" 
+                      options={(exams || []).map((e: any) => ({ value: e.id, label: e.name }))} 
+                      value={marksFilters.examId}
+                      onChange={(e: any) => setMarksFilters({...marksFilters, examId: e.target.value})}
+                    />
+                  </div>
+                  <div className="w-44">
+                    <Select 
+                      label="Subject" 
+                      options={masterData?.subjects || []} 
+                      value={marksFilters.subject}
+                      onChange={(e: any) => setMarksFilters({...marksFilters, subject: e.target.value})}
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-8">
-                {examSchedules.filter((s: any) => (!marksFilters.class || s.class === marksFilters.class) && (!marksFilters.section || s.section === marksFilters.section)).length === 0 ? (
-                  <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    <p className="text-text-sub italic">No exam schedules found for the selected filters.</p>
-                  </div>
-                ) : (
-                  examSchedules.filter((s: any) => (!marksFilters.class || s.class === marksFilters.class) && (!marksFilters.section || s.section === marksFilters.section)).map((s: any) => (
-                    <div key={s.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                      <div className="mb-6">
-                        <h4 className="font-bold text-xl">{s.subject} ({s.class}-{s.section})</h4>
-                        <p className="text-sm text-text-sub">Exam: {(exams || []).find((e: any) => e.id === s.examId)?.name || 'N/A'}</p>
+                {/* 1. Direct Entry Table (If both Exam and Subject are selected) */}
+                {marksFilters.class && marksFilters.section && marksFilters.examId && marksFilters.subject ? (
+                  (() => {
+                    const matchedClass = marksFilters.class;
+                    const matchedSection = marksFilters.section;
+                    const matchedExamId = marksFilters.examId;
+                    const matchedSubject = marksFilters.subject;
+                    
+                    const examDetail = (exams || []).find((e: any) => e.id === matchedExamId);
+                    const defaultMax = examDetail?.type?.includes('PT') ? '20' : 
+                                     (examDetail?.type?.includes('Half') || examDetail?.type?.includes('Annual')) ? '80' : '100';
+
+                    const matchingStudents = (students || []).filter((st: any) => matchClassAndSection(st.class, st.section, matchedClass, matchedSection));
+
+                    return (
+                      <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                        <div className="mb-6 flex justify-between items-center">
+                          <div>
+                            <h4 className="font-bold text-xl">{matchedSubject} ({matchedClass}-{matchedSection})</h4>
+                            <p className="text-sm text-text-sub">Direct Marks Entry for Exam: {examDetail?.name || 'N/A'}</p>
+                          </div>
+                          <span className="px-4 py-2 bg-primary/10 text-primary rounded-xl text-xs font-bold">
+                            {matchingStudents.length} Students Found
+                          </span>
+                        </div>
+
+                        {matchingStudents.length === 0 ? (
+                          <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">
+                            <p className="text-text-sub italic">No students found in {matchedClass}-{matchedSection}.</p>
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="text-xs font-bold text-text-secondary uppercase tracking-wider border-b border-slate-200">
+                                  <th className="pb-3 px-4">Student Name</th>
+                                  <th className="pb-3 px-4 w-28 text-center">Obtained</th>
+                                  <th className="pb-3 px-4 w-28 text-center">Full Marks</th>
+                                  <th className="pb-3 px-4">Feedback</th>
+                                  <th className="pb-3 px-4 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="text-sm">
+                                {matchingStudents.map((student: any) => {
+                                  const result = (examResults || []).find((r: any) => 
+                                    r.examName === matchedExamId && 
+                                    r.subject === matchedSubject && 
+                                    r.studentId === student.studentId
+                                  );
+
+                                  const formKey = `${matchedExamId}_${matchedSubject}_${student.studentId}`;
+                                  const currentData = marksForm[formKey] || { 
+                                    marks: result?.marksObtained !== undefined ? result.marksObtained : (result?.marks || ''), 
+                                    maxMarks: result?.maxMarks !== undefined ? result.maxMarks : defaultMax,
+                                    feedback: result?.feedback || '' 
+                                  };
+
+                                  return (
+                                    <tr key={student.studentId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+                                      <td className="py-4 px-4 font-medium">{student.name} {student.surname}</td>
+                                      <td className="py-4 px-4">
+                                        <input 
+                                          type="number" 
+                                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none text-center font-bold"
+                                          placeholder="Obt."
+                                          value={currentData.marks}
+                                          onChange={(e) => setMarksForm({...marksForm, [formKey]: { ...currentData, marks: e.target.value }})}
+                                        />
+                                      </td>
+                                      <td className="py-4 px-4">
+                                        <input 
+                                          type="number" 
+                                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none text-center"
+                                          placeholder="Full"
+                                          value={currentData.maxMarks}
+                                          onChange={(e) => setMarksForm({...marksForm, [formKey]: { ...currentData, maxMarks: e.target.value }})}
+                                        />
+                                      </td>
+                                      <td className="py-4 px-4">
+                                        <input 
+                                          type="text" 
+                                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                          placeholder="Teacher's feedback"
+                                          value={currentData.feedback}
+                                          onChange={(e) => setMarksForm({...marksForm, [formKey]: { ...currentData, feedback: e.target.value }})}
+                                        />
+                                      </td>
+                                      <td className="py-4 px-4 text-right">
+                                        <div className="flex items-center justify-end gap-2">
+                                          <button 
+                                            onClick={() => handleSaveMarks('', student.studentId, `${student.name} ${student.surname}`, matchedExamId, matchedSubject)}
+                                            className="bg-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-2"
+                                          >
+                                            <Save size={14} /> Save
+                                          </button>
+                                          {result && (
+                                            <button 
+                                              onClick={() => handleDeleteMarks(result.id)}
+                                              className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-all"
+                                              title="Delete Marks"
+                                            >
+                                              <Trash2 size={16} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
-                      
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="text-xs font-bold text-text-secondary uppercase tracking-wider border-b border-slate-200">
-                              <th className="pb-3 px-4">Student Name</th>
-                              <th className="pb-3 px-4 w-28 text-center">Obtained</th>
-                              <th className="pb-3 px-4 w-28 text-center">Full Marks</th>
-                              <th className="pb-3 px-4">Feedback</th>
-                              <th className="pb-3 px-4 text-right">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="text-sm">
-                            {(students || []).filter((st: any) => st.class === s.class && st.section === s.section).map((student: any) => {
-                              const result = (examResults || []).find((r: any) => 
-                                (r.examScheduleId === s.id || (r.examName === s.examId && r.subject === s.subject)) && 
-                                r.studentId === student.studentId
-                              );
-                              
-                              const defaultMax = (exams || []).find((e: any) => e.id === s.examId)?.type?.includes('PT') ? '20' : 
-                                               ((exams || []).find((e: any) => e.id === s.examId)?.type?.includes('Half') || 
-                                                (exams || []).find((e: any) => e.id === s.examId)?.type?.includes('Annual')) ? '80' : '100';
+                    );
+                  })()
+                ) : (
+                  /* 2. Schedule-Based Entry Table (Fallback or default) */
+                  (() => {
+                    const filteredSchedules = examSchedules.filter((s: any) => {
+                      return matchClassAndSection(s.class, s.section, marksFilters.class, marksFilters.section);
+                    });
 
-                              const currentData = marksForm[`${s.id}_${student.studentId}`] || { 
-                                marks: result?.marks || '', 
-                                maxMarks: result?.maxMarks || defaultMax,
-                                feedback: result?.feedback || '' 
-                              };
+                    if (filteredSchedules.length === 0) {
+                      return (
+                        <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          <p className="text-text-sub font-bold mb-2">No exam schedules found for the selected filters.</p>
+                          <p className="text-xs text-text-sub max-w-md mx-auto">
+                            To enter marks directly, please select an <strong>Exam</strong> and a <strong>Subject</strong> in the filters above, or create a schedule under the Schedule tab.
+                          </p>
+                        </div>
+                      );
+                    }
 
-                              return (
-                                <tr key={student.studentId} className="border-b border-slate-100 last:border-0">
-                                  <td className="py-4 px-4 font-medium">{student.name} {student.surname}</td>
-                                  <td className="py-4 px-4">
-                                    <input 
-                                      type="number" 
-                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none text-center font-bold"
-                                      placeholder="Obt."
-                                      value={currentData.marks}
-                                      onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, marks: e.target.value }})}
-                                    />
-                                  </td>
-                                  <td className="py-4 px-4">
-                                    <input 
-                                      type="number" 
-                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none text-center"
-                                      placeholder="Full"
-                                      value={currentData.maxMarks}
-                                      onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, maxMarks: e.target.value }})}
-                                    />
-                                  </td>
-                                <td className="py-4 px-4">
-                                  <input 
-                                    type="text" 
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
-                                    placeholder="Teacher's feedback"
-                                    value={currentData.feedback}
-                                    onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, feedback: e.target.value }})}
-                                  />
-                                </td>
-                                <td className="py-4 px-4 text-right">
-                                  <div className="flex items-center justify-end gap-2">
-                                    <button 
-                                      onClick={() => handleSaveMarks(s.id, student.studentId, `${student.name} ${student.surname}`)}
-                                      className="bg-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-2"
-                                    >
-                                      <Save size={14} /> Save
-                                    </button>
-                                    {result && (
-                                      <button 
-                                        onClick={() => handleDeleteMarks(result.id)}
-                                        className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-all"
-                                        title="Delete Marks"
-                                      >
-                                        <Trash2 size={16} />
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
+                    return filteredSchedules.map((s: any) => (
+                      <div key={s.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                        <div className="mb-6">
+                          <h4 className="font-bold text-xl">{s.subject} ({s.class}-{s.section})</h4>
+                          <p className="text-sm text-text-sub">Exam: {(exams || []).find((e: any) => e.id === s.examId || e.name === s.examId)?.name || 'N/A'}</p>
+                        </div>
+                        
+                        <div className="overflow-x-auto bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="text-xs font-bold text-text-secondary uppercase tracking-wider border-b border-slate-200">
+                                <th className="pb-3 px-4">Student Name</th>
+                                <th className="pb-3 px-4 w-28 text-center">Obtained</th>
+                                <th className="pb-3 px-4 w-28 text-center">Full Marks</th>
+                                <th className="pb-3 px-4">Feedback</th>
+                                <th className="pb-3 px-4 text-right">Action</th>
                               </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )))}
+                            </thead>
+                            <tbody className="text-sm">
+                              {(students || []).filter((st: any) => matchClassAndSection(st.class, st.section, s.class, s.section)).map((student: any) => {
+                                const result = (examResults || []).find((r: any) => 
+                                  (r.examScheduleId === s.id || (r.examName === s.examId && r.subject === s.subject)) && 
+                                  r.studentId === student.studentId
+                                );
+                                
+                                const defaultMax = (exams || []).find((e: any) => e.id === s.examId || e.name === s.examId)?.type?.includes('PT') ? '20' : 
+                                                 ((exams || []).find((e: any) => e.id === s.examId || e.name === s.examId)?.type?.includes('Half') || 
+                                                  (exams || []).find((e: any) => e.id === s.examId || e.name === s.examId)?.type?.includes('Annual')) ? '80' : '100';
+
+                                const currentData = marksForm[`${s.id}_${student.studentId}`] || { 
+                                  marks: result?.marksObtained !== undefined ? result.marksObtained : (result?.marks || ''), 
+                                  maxMarks: result?.maxMarks !== undefined ? result.maxMarks : defaultMax,
+                                  feedback: result?.feedback || '' 
+                                };
+
+                                return (
+                                  <tr key={student.studentId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+                                    <td className="py-4 px-4 font-medium">{student.name} {student.surname}</td>
+                                    <td className="py-4 px-4">
+                                      <input 
+                                        type="number" 
+                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none text-center font-bold"
+                                        placeholder="Obt."
+                                        value={currentData.marks}
+                                        onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, marks: e.target.value }})}
+                                      />
+                                    </td>
+                                    <td className="py-4 px-4">
+                                      <input 
+                                        type="number" 
+                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none text-center"
+                                        placeholder="Full"
+                                        value={currentData.maxMarks}
+                                        onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, maxMarks: e.target.value }})}
+                                      />
+                                    </td>
+                                    <td className="py-4 px-4">
+                                      <input 
+                                        type="text" 
+                                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+                                        placeholder="Teacher's feedback"
+                                        value={currentData.feedback}
+                                        onChange={(e) => setMarksForm({...marksForm, [`${s.id}_${student.studentId}`]: { ...currentData, feedback: e.target.value }})}
+                                      />
+                                    </td>
+                                    <td className="py-4 px-4 text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button 
+                                          onClick={() => handleSaveMarks(s.id, student.studentId, `${student.name} ${student.surname}`)}
+                                          className="bg-primary text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-2"
+                                        >
+                                          <Save size={14} /> Save
+                                        </button>
+                                        {result && (
+                                          <button 
+                                            onClick={() => handleDeleteMarks(result.id)}
+                                            className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-all"
+                                            title="Delete Marks"
+                                          >
+                                            <Trash2 size={16} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ));
+                  })()
+                )}
               </div>
             </Card>
           </motion.div>
@@ -26621,13 +26872,8 @@ const ExaminationModule = ({
                               <td className="py-4 px-4 text-right rounded-r-2xl">
                                 <div className="flex items-center justify-end gap-2 transition-all">
                                   <button 
-                                    disabled={reportCardTemplates.length === 0}
                                     onClick={() => setSelectedReportStudent(student)}
-                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                      reportCardTemplates.length === 0 
-                                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                                      : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'
-                                    }`}
+                                    className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"
                                   >
                                     {reportCard ? 'Edit Result' : 'Generate'}
                                   </button>
@@ -26673,7 +26919,7 @@ const ExaminationModule = ({
             {selectedReportStudent && (
               <ReportCardEditor 
                 student={selectedReportStudent}
-                template={(reportCardTemplates || []).find((t: any) => t.subjects && t.subjects.length > 0) || (reportCardTemplates || [])[0]}
+                template={(reportCardTemplates || []).find((t: any) => t.subjects && t.subjects.length > 0) || (reportCardTemplates || [])[0] || defaultTemplate}
                 reportCard={(reportCards || []).find((rc: any) => rc.studentId === selectedReportStudent.studentId)}
                 schoolProfile={schoolProfile}
                 examResults={examResults}
