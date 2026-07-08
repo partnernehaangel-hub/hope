@@ -49,8 +49,11 @@ async function initDatabase() {
   if (!supabase) return;
   try {
     const migrationsSql = `
+      -- Enable uuid-ossp extension
+      CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
       CREATE TABLE IF NOT EXISTS whatsapp_sessions (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         user_id TEXT,
         session_name TEXT UNIQUE DEFAULT 'default',
         phone_number TEXT,
@@ -61,8 +64,38 @@ async function initDatabase() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS whatsapp_message_logs (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        recipient_name TEXT DEFAULT '',
+        recipient_number TEXT NOT NULL,
+        recipient_type TEXT DEFAULT 'student',
+        message_content TEXT,
+        message_type TEXT DEFAULT 'text',
+        attachment_url TEXT,
+        status TEXT DEFAULT 'sent',
+        error_message TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name TEXT NOT NULL,
+        template_id UUID,
+        target_audience TEXT DEFAULT 'all',
+        status TEXT DEFAULT 'draft',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS whatsapp_incoming (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        sender_number TEXT NOT NULL,
+        sender_name TEXT,
+        message_content TEXT,
+        received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS message_logs (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         phone TEXT,
         message TEXT,
         attachment TEXT,
@@ -288,7 +321,16 @@ whatsappRouter.post("/send-message", async (req, res) => {
   const cleanNum = phone.replace(/\D/g, "");
   const targetId = `${cleanNum}@s.whatsapp.net`;
 
-  if (connectionState.status !== "Connected" || !sock) {
+  if (connectionState.status !== "Connected") {
+    return res.status(400).json({ error: "WhatsApp is not connected." });
+  }
+
+  if (connectionState.mode === "Sandbox") {
+    await logMessageToDB("Direct Message", cleanNum, "other", message, "text", "delivered");
+    return res.json({ success: true, message: "Simulated message sent successfully (Sandbox Mode)!" });
+  }
+
+  if (!sock) {
     return res.status(400).json({ error: "WhatsApp is not connected." });
   }
 
@@ -312,7 +354,16 @@ whatsappRouter.post("/send-document", async (req, res) => {
   const cleanNum = phone.replace(/\D/g, "");
   const targetId = `${cleanNum}@s.whatsapp.net`;
 
-  if (connectionState.status !== "Connected" || !sock) {
+  if (connectionState.status !== "Connected") {
+    return res.status(400).json({ error: "WhatsApp is not connected." });
+  }
+
+  if (connectionState.mode === "Sandbox") {
+    await logMessageToDB("Direct Document", cleanNum, "other", message || "Document attachment", "document", "delivered", undefined, attachment);
+    return res.json({ success: true, message: "Simulated document sent successfully (Sandbox Mode)!" });
+  }
+
+  if (!sock) {
     return res.status(400).json({ error: "WhatsApp is not connected." });
   }
 
@@ -365,10 +416,19 @@ whatsappRouter.post("/logout", async (req, res) => {
 
 // POST /whatsapp/reconnect -> Reinitializes or reconnects
 whatsappRouter.post("/reconnect", async (req, res) => {
-  if (connectionState.status === "Connected" && sock) {
+  if (connectionState.status === "Connected" && (sock || connectionState.mode === "Sandbox")) {
     return res.json({ success: true, message: "WhatsApp is already connected." });
   }
   
+  if (connectionState.mode === "Sandbox") {
+    connectionState.status = "Waiting for QR";
+    connectionState.qrCode = "whatsapp_sandbox_mock_qr_token_" + Math.random().toString(36).substr(2, 9);
+    connectionState.phoneNumber = "";
+    connectionState.error = null;
+    await updateDBSessionStatus("Waiting for QR", "", connectionState.qrCode);
+    return res.json({ success: true, message: "WhatsApp Sandbox session reinitialized.", state: connectionState });
+  }
+
   if (sock) {
     try { sock.end(undefined); } catch(e) {}
     sock = null;
@@ -385,6 +445,15 @@ whatsappRouter.post("/connect", async (req, res) => {
     return res.json({ success: true, message: "WhatsApp is already connected." });
   }
   
+  if (connectionState.mode === "Sandbox") {
+    connectionState.status = "Waiting for QR";
+    connectionState.qrCode = "whatsapp_sandbox_mock_qr_token_" + Math.random().toString(36).substr(2, 9);
+    connectionState.phoneNumber = "";
+    connectionState.error = null;
+    await updateDBSessionStatus("Waiting for QR", "", connectionState.qrCode);
+    return res.json({ success: true, message: "Initializing WhatsApp Sandbox Session...", state: connectionState });
+  }
+
   if (sock) {
     try { sock.end(undefined); } catch(e) {}
     sock = null;
@@ -423,7 +492,16 @@ whatsappRouter.post("/send", async (req, res) => {
   const cleanNum = recipientNumber.replace(/\D/g, "");
   const targetId = `${cleanNum}@s.whatsapp.net`;
 
-  if (connectionState.status !== "Connected" || !sock) {
+  if (connectionState.status !== "Connected") {
+    return res.status(400).json({ error: "WhatsApp is not connected. Connect first from the dashboard." });
+  }
+
+  if (connectionState.mode === "Sandbox") {
+    await logMessageToDB(recipientName || "Direct Contact", cleanNum, recipientType || "other", messageContent, attachmentUrl ? "document" : "text", "delivered", undefined, attachmentUrl);
+    return res.json({ success: true, message: "Simulated message sent successfully (Sandbox Mode)!", provider: "Sandbox Simulator" });
+  }
+
+  if (!sock) {
     return res.status(400).json({ error: "WhatsApp is not connected. Connect first from the dashboard." });
   }
 
@@ -462,7 +540,7 @@ whatsappRouter.post("/bulk", async (req, res) => {
     return res.status(400).json({ error: "Recipients array is required." });
   }
 
-  if (connectionState.status !== "Connected" || !sock) {
+  if (connectionState.status !== "Connected") {
     return res.status(400).json({ error: "WhatsApp is not connected." });
   }
 
@@ -478,6 +556,41 @@ whatsappRouter.post("/bulk", async (req, res) => {
       }).select().single();
       campaignId = campaign?.id || "";
     } catch (e) {}
+  }
+
+  if (connectionState.mode === "Sandbox") {
+    for (const item of recipients) {
+      const cleanNum = item.phone.replace(/\D/g, "");
+      if (!cleanNum) {
+        failCount++;
+        continue;
+      }
+
+      let customMessage = templateBody
+        .replace(/{name}/gi, item.name || "Recipient")
+        .replace(/{class}/gi, item.className || "N/A")
+        .replace(/{due}/gi, item.dueAmount || "0")
+        .replace(/{date}/gi, new Date().toLocaleDateString())
+        .replace(/{roll}/gi, item.rollNo || "N/A");
+
+      await logMessageToDB(item.name, cleanNum, item.role || "student", customMessage, messageType || "text", "delivered");
+      successCount++;
+    }
+
+    if (supabase && campaignId) {
+      await supabase.from("whatsapp_campaigns").update({ status: "sent" }).eq("id", campaignId);
+    }
+
+    return res.json({
+      success: true,
+      message: `Simulated bulk complete (Sandbox Mode). Sent: ${successCount}, Failed: ${failCount}`,
+      successCount,
+      failCount
+    });
+  }
+
+  if (!sock) {
+    return res.status(400).json({ error: "WhatsApp is not connected." });
   }
 
   for (const item of recipients) {
@@ -535,13 +648,57 @@ whatsappRouter.post("/incoming-reply", async (req, res) => {
       if (messageContent.toLowerCase().includes("fee")) {
         const autoReply = `Hello ${senderName || "there"}, our automated support logs show a fee dues inquiry. To get live ledgers, tap the dashboard or reply with "1" to get the standard bank payment details. Thank you!`;
         const targetId = `${cleanNum}@s.whatsapp.net`;
-        if (sock && connectionState.status === "Connected") {
+        if (connectionState.mode === "Sandbox" && connectionState.status === "Connected") {
+          await logMessageToDB("AutoResponder Reply", cleanNum, "parent", autoReply, "text", "delivered");
+        } else if (sock && connectionState.status === "Connected") {
           await sock.sendMessage(targetId, { text: autoReply });
+          await logMessageToDB("AutoResponder Reply", cleanNum, "parent", autoReply, "text", "delivered");
         }
-        await logMessageToDB("AutoResponder Reply", cleanNum, "parent", autoReply, "text", "delivered");
       }
     } catch (e) {}
   }
 
   res.json({ success: true, message: "Simulated response recorded successfully." });
+});
+
+// POST /whatsapp/mode -> Body: { mode: "Real" | "Sandbox" }
+whatsappRouter.post("/mode", async (req, res) => {
+  const { mode } = req.body;
+  if (mode !== "Real" && mode !== "Sandbox") {
+    return res.status(400).json({ error: "Invalid mode. Must be 'Real' or 'Sandbox'." });
+  }
+
+  // Close existing Baileys connection if open
+  if (sock) {
+    try { sock.end(undefined); } catch (e) {}
+    sock = null;
+  }
+  clearAuthFolder();
+
+  connectionState.mode = mode;
+  connectionState.status = "Disconnected";
+  connectionState.phoneNumber = "";
+  connectionState.qrCode = "";
+  connectionState.error = null;
+
+  await updateDBSessionStatus("Disconnected", "", "");
+
+  res.json({ success: true, message: `WhatsApp mode switched to ${mode}.`, state: connectionState });
+});
+
+// POST /whatsapp/simulate-scan -> Simulates scanning QR code in Sandbox mode
+whatsappRouter.post("/simulate-scan", async (req, res) => {
+  if (connectionState.mode !== "Sandbox") {
+    return res.status(400).json({ error: "Simulate scan is only available in Sandbox mode." });
+  }
+
+  connectionState.status = "Connected";
+  connectionState.phoneNumber = "+1 (555) 019-2834";
+  connectionState.qrCode = "";
+  connectionState.lastSync = new Date().toISOString();
+  connectionState.error = null;
+
+  await updateDBSessionStatus("Connected", "+1 (555) 019-2834", "");
+
+  res.json({ success: true, message: "Simulated QR Scan complete. WhatsApp status connected.", state: connectionState });
 });
