@@ -16251,11 +16251,37 @@ const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
         <p style="color: #64748b; font-size: 13px; margin-bottom: 28px; font-weight: 500;">Get the school App built natively for your mobile phone! Choose your preferred method below.</p>
         
         <div style="display: flex; gap: 8px; background: #f1f5f9; padding: 4px; border-radius: 16px; margin-bottom: 24px;">
-          <button id="tab-apk" style="flex: 1; border: none; background: white; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #2f5d9f; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 50%;">DIRECT APK (ANDROID)</button>
-          <button id="tab-pwa" style="flex: 1; border: none; background: transparent; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #64748b; cursor: pointer; width: 50%;">PWA (ADD TO HOME)</button>
+          <button id="tab-pwa" style="flex: 1; border: none; background: white; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #2f5d9f; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 50%;">PWA (ADD TO HOME)</button>
+          <button id="tab-apk" style="flex: 1; border: none; background: transparent; padding: 10px; border-radius: 12px; font-weight: 800; font-size: 11px; color: #64748b; cursor: pointer; width: 50%;">DIRECT APK (ANDROID)</button>
         </div>
  
-        <div id="content-apk" style="display: block;">
+        <div id="content-pwa" style="display: block;">
+          <div style="background: white; padding: 12px; border: 2px solid #f1f5f9; border-radius: 24px; display: inline-block; margin-bottom: 24px;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${appUrl}" style="width: 160px; height: 160px; display: block;" referrerPolicy="no-referrer" alt="QR" />
+          </div>
+          
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 18px; border-radius: 20px; text-align: left; margin-bottom: 24px;">
+            <p style="font-weight: 800; font-size: 11px; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">📲 Recommended Installation (PWA):</p>
+            <ul style="margin: 0; padding-left: 18px; color: #166534; font-size: 12px; font-weight: 500; line-height: 1.6;">
+              <li>No downloads or package installs required.</li>
+              <li>Installs in seconds on both Android and iPhone devices.</li>
+              <li>Works directly from your mobile browser settings.</li>
+            </ul>
+          </div>
+          
+          <div style="background: #f8fafc; padding: 18px; border-radius: 20px; text-align: left; margin-bottom: 24px;">
+            <p style="font-weight: 800; font-size: 11px; color: #475569; text-transform: uppercase; margin-bottom: 8px;">Easy Setup Instructions:</p>
+            <ul style="margin: 0; padding-left: 18px; color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.6;">
+              <li>Scan the QR code with Chrome/Safari on your smartphone.</li>
+              <li>Tap the browser "Share" or menu settings icon.</li>
+              <li>Press "Add to Home Screen" to install instantly!</li>
+            </ul>
+          </div>
+          
+          <a href="${appUrl}" target="_blank" style="display: block; width: 100%; background: #0f172a; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-sizing: border-box;">Open App Link</a>
+        </div>
+
+        <div id="content-apk" style="display: none;">
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 18px; border-radius: 20px; text-align: left; margin-bottom: 24px;">
             <p style="font-weight: 800; font-size: 11px; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">🚀 Native Android Application:</p>
             <ul style="margin: 0; padding-left: 18px; color: #166534; font-size: 12px; font-weight: 500; line-height: 1.6;">
@@ -16266,24 +16292,14 @@ const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
             </ul>
           </div>
           
-          <a href="/Hope_English_School.apk" download="${sanitizedFileName}" style="display: block; width: 100%; background: #2f5d9f; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-shadow: 0 4px 12px rgba(47,93,159,0.3); box-sizing: border-box;">Download Native APK</a>
-        </div>
- 
-        <div id="content-pwa" style="display: none;">
-          <div style="background: white; padding: 12px; border: 2px solid #f1f5f9; border-radius: 24px; display: inline-block; margin-bottom: 24px;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${appUrl}" style="width: 160px; height: 160px; display: block;" referrerPolicy="no-referrer" alt="QR" />
-          </div>
+          <a href="/Hope_English_School.apk" download="${sanitizedFileName}" style="display: block; width: 100%; background: #2f5d9f; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-shadow: 0 4px 12px rgba(47,93,159,0.3); box-sizing: border-box; margin-bottom: 16px;">Download Native APK</a>
           
-          <div style="background: #f8fafc; padding: 18px; border-radius: 20px; text-align: left; margin-bottom: 24px;">
-            <p style="font-weight: 800; font-size: 11px; color: #475569; text-transform: uppercase; margin-bottom: 8px;">PWA Install Instructions:</p>
-            <ul style="margin: 0; padding-left: 18px; color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.6;">
-              <li>Scan the QR code with Chrome/Safari on your smartphone.</li>
-              <li>Tap the browser "Share" or settings Menu icon.</li>
-              <li>Press "Add to Home Screen" to run instantly.</li>
-            </ul>
+          <div style="background: #fffbeb; border: 1px solid #fef3c7; padding: 16px; border-radius: 16px; text-align: left; font-size: 11px; color: #92400e; font-weight: 500; line-height: 1.5;">
+            <p style="margin: 0 0 6px 0; font-weight: 800; text-transform: uppercase; color: #b45309; display: flex; align-items: center; gap: 4px;">
+              ⚠️ Developer Notice:
+            </p>
+            Cloud platforms (like Vercel) cannot compile mobile APKs automatically. Currently, the downloaded file is a placeholder guide. To enable real direct APK downloads, you must build the APK locally (using Android Studio/Gradle) and replace the file at <code>/public/Hope_English_School.apk</code>.
           </div>
-          
-          <a href="${appUrl}" target="_blank" style="display: block; width: 100%; background: #0f172a; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-sizing: border-box;">Open App Link</a>
         </div>
       </div>
     </div>
@@ -16300,6 +16316,17 @@ const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
   const contentPwa = document.getElementById('content-pwa');
   const closeBtn = document.getElementById('close-apk-modal');
 
+  btnPwa?.addEventListener('click', () => {
+    btnPwa.style.background = 'white';
+    btnPwa.style.color = '#2f5d9f';
+    btnPwa.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+    btnApk!.style.background = 'transparent';
+    btnApk!.style.color = '#64748b';
+    btnApk!.style.boxShadow = 'none';
+    contentPwa!.style.display = 'block';
+    contentApk!.style.display = 'none';
+  });
+
   btnApk?.addEventListener('click', () => {
     btnApk.style.background = 'white';
     btnApk.style.color = '#2f5d9f';
@@ -16309,17 +16336,6 @@ const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
     btnPwa!.style.boxShadow = 'none';
     contentApk!.style.display = 'block';
     contentPwa!.style.display = 'none';
-  });
-
-  btnPwa?.addEventListener('click', () => {
-    btnPwa.style.background = 'white';
-    btnPwa.style.color = '#2f5d9f';
-    btnPwa.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-    btnApk!.style.background = 'transparent';
-    btnApk!.style.color = '#64748b';
-    btnApk!.style.boxShadow = 'none';
-    contentApk!.style.display = 'none';
-    contentPwa!.style.display = 'block';
   });
 
   closeBtn?.addEventListener('click', () => {
