@@ -7274,7 +7274,8 @@ const FeeManagement = ({
           dueDate: inserted[0].due_date,
           totalPaid: inserted[0].total_paid,
           period: inserted[0].month,
-          amount: inserted[0].amount_payable !== undefined && inserted[0].amount_payable !== null ? inserted[0].amount_payable : inserted[0].amount
+          amount: inserted[0].amount_payable !== undefined && inserted[0].amount_payable !== null ? inserted[0].amount_payable : inserted[0].amount,
+          session: inserted[0].academic_session
         };
 
         setFeeTransactions([newTransaction, ...feeTransactions]);
@@ -8318,7 +8319,7 @@ const FeeManagement = ({
               );
               
               // Filter transactions by session and student
-              const studentTransactions = feeTransactions.filter(t => t.studentId === student.studentId && t.session === targetSession);
+              const studentTransactions = feeTransactions.filter(t => t.studentId === student.studentId && (t.session === targetSession || t.academic_session === targetSession));
               
               const ledgerItems: any[] = [];
               const today = new Date();
@@ -16318,7 +16319,8 @@ const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
             </ul>
           </div>
           
-          <a href="${appUrl}" target="_blank" style="display: block; width: 100%; background: #0f172a; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-sizing: border-box;">Open App Link</a>
+          <button id="btn-trigger-pwa-install" style="display: block; width: 100%; background: #10b981; color: white; border: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-sizing: border-box; margin-bottom: 12px; cursor: pointer; text-align: center;">Install App on Phone</button>
+          <a href="${appUrl}" target="_blank" style="display: block; width: 100%; background: #0f172a; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-sizing: border-box; text-align: center;">Open App Link</a>
         </div>
 
         <div id="content-apk" style="display: none;">
@@ -16332,7 +16334,7 @@ const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
             </ul>
           </div>
           
-          <a href="/Hope_English_School.apk" download="${sanitizedFileName}" style="display: block; width: 100%; background: #2f5d9f; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-shadow: 0 4px 12px rgba(47,93,159,0.3); box-sizing: border-box; margin-bottom: 16px;">Download Native APK</a>
+          <a href="/Hope_English_School.apk" download="${sanitizedFileName}" style="display: block; width: 100%; background: #2f5d9f; color: white; text-decoration: none; padding: 18px; border-radius: 20px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; transition: 0.2s; box-shadow: 0 4px 12px rgba(47,93,159,0.3); box-sizing: border-box; margin-bottom: 16px; text-align: center;">Download Native APK</a>
           
           <div style="background: #fffbeb; border: 1px solid #fef3c7; padding: 16px; border-radius: 16px; text-align: left; font-size: 11px; color: #92400e; font-weight: 500; line-height: 1.5;">
             <p style="margin: 0 0 6px 0; font-weight: 800; text-transform: uppercase; color: #b45309; display: flex; align-items: center; gap: 4px;">
@@ -16355,6 +16357,27 @@ const downloadAPK = (type: 'student' | 'staff', schoolProfile?: any) => {
   const contentApk = document.getElementById('content-apk');
   const contentPwa = document.getElementById('content-pwa');
   const closeBtn = document.getElementById('close-apk-modal');
+  const btnTriggerInstall = document.getElementById('btn-trigger-pwa-install');
+
+  // Handle direct PWA install trigger if event is available
+  btnTriggerInstall?.addEventListener('click', async () => {
+    const promptEvent = (window as any).deferredPrompt;
+    if (!promptEvent) {
+      alert('PWA Direct Install is waiting for the browser to trigger! In the meantime, you can easily install the app by tapping your browser menu settings (or share icon on iOS Safari) and choosing "Add to Home Screen".');
+      return;
+    }
+    try {
+      promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      console.log(`User installation decision: ${outcome}`);
+      if (outcome === 'accepted') {
+        (window as any).deferredPrompt = null;
+        if (btnTriggerInstall) btnTriggerInstall.style.display = 'none';
+      }
+    } catch (err) {
+      console.error('Error triggering PWA install:', err);
+    }
+  });
 
   btnPwa?.addEventListener('click', () => {
     btnPwa.style.background = 'white';
@@ -16618,8 +16641,22 @@ const SuperAdminPanel = ({ users, setUsers, schoolProfile, setSchoolProfile }: a
           </div>
           <div className="space-y-2">
             <button 
-              onClick={() => {
-                alert('PWA Installation activated. You can now install this app on your home screen via browser settings.');
+              onClick={async () => {
+                const promptEvent = (window as any).deferredPrompt;
+                if (promptEvent) {
+                  try {
+                    promptEvent.prompt();
+                    const { outcome } = await promptEvent.userChoice;
+                    console.log(`User PWA installation choice: ${outcome}`);
+                    if (outcome === 'accepted') {
+                      (window as any).deferredPrompt = null;
+                    }
+                  } catch (err) {
+                    console.error('Error launching PWA prompt:', err);
+                  }
+                } else {
+                  alert('PWA Direct Install is waiting for the browser to trigger! In the meantime, you can easily install the app by tapping your browser menu settings (or share icon on iOS Safari) and choosing "Add to Home Screen".');
+                }
               }}
               className="w-full py-3 bg-white border-2 border-emerald-200 rounded-xl text-xs font-black text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2"
             >
@@ -24745,19 +24782,31 @@ const IDCardsModule = ({
         <div className="grid grid-cols-3 gap-12 mt-16 pt-12 border-t border-slate-100">
           <div className="text-center">
             <div className="w-48 h-12 border-b-2 border-slate-300 mx-auto mb-3 flex items-end justify-center relative">
-               <img src={getProxyImageUrl(schoolProfile.classTeacherSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
+               {schoolProfile.classTeacherSignature ? (
+                 <img src={getProxyImageUrl(schoolProfile.classTeacherSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
+               ) : (
+                 <span className="text-[10px] text-slate-300 italic mb-1 uppercase font-bold">Signature</span>
+               )}
             </div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Class Teacher</p>
           </div>
           <div className="text-center flex flex-col items-center justify-center">
             <div className="w-24 h-24 rounded-full border-2 border-primary/10 flex items-center justify-center mb-2 bg-primary/5 shadow-inner">
-               <img src={getProxyImageUrl(schoolProfile.schoolStamp)} crossOrigin="anonymous" alt="" className="w-16 h-16 object-contain mix-blend-multiply opacity-40 grayscale contrast-150" />
+               {schoolProfile.schoolStamp ? (
+                 <img src={getProxyImageUrl(schoolProfile.schoolStamp)} crossOrigin="anonymous" alt="" className="w-16 h-16 object-contain mix-blend-multiply opacity-40 grayscale contrast-150" />
+               ) : (
+                 <span className="text-[10px] text-slate-300 italic uppercase font-bold">Stamp</span>
+               )}
             </div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Institutional Seal</p>
           </div>
           <div className="text-center">
             <div className="w-48 h-12 border-b-2 border-slate-300 mx-auto mb-3 flex items-end justify-center relative">
-               <img src={getProxyImageUrl(schoolProfile.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
+               {schoolProfile.principalSignature ? (
+                 <img src={getProxyImageUrl(schoolProfile.principalSignature)} crossOrigin="anonymous" alt="" className="h-full object-contain mix-blend-multiply opacity-80" />
+               ) : (
+                 <span className="text-[10px] text-slate-300 italic mb-1 uppercase font-bold">Signature</span>
+               )}
             </div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Principal</p>
           </div>

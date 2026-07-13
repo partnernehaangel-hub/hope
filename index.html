@@ -4,7 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#4f46e5" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     <title>Hope English School</title>
+    <script>
+      // Global variable to store beforeinstallprompt event
+      window.deferredPrompt = null;
+      
+      window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent Chrome 67 and earlier from automatically showing the prompt
+        e.preventDefault();
+        // Stash the event so it can be triggered later
+        window.deferredPrompt = e;
+        
+        // Dispatch custom event to notify React app
+        window.dispatchEvent(new CustomEvent('pwa-installable', { detail: true }));
+      });
+
+      // Register Service Worker
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => {
+              console.log('PWA ServiceWorker registered successfully:', reg.scope);
+            })
+            .catch((err) => {
+              console.error('PWA ServiceWorker registration failed:', err);
+            });
+        });
+      }
+    </script>
     <style>
       #root:empty {
         background: #4f46e5;
