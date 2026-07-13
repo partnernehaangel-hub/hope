@@ -170,7 +170,7 @@ export const Attendance = ({
       (a.date === attendanceDate || a.date === new Date(attendanceDate).toISOString().split('T')[0])
     );
     if (exists) {
-      triggerNotif('Attendance already marked for ' + student.name + ' on this date.', true);
+      triggerNotif('Attendance already marked for ' + student.name + ' on this date (ONE TIME ONLY).', true);
       return;
     }
 
@@ -192,12 +192,17 @@ export const Attendance = ({
       };
 
       if (supabase) {
-        // Drop any matching record for today
-        await supabase
+        // Direct DB check for safety:
+        const { data: existingData } = await supabase
           .from('student_attendance')
-          .delete()
+          .select('id')
           .eq('student_id', student.studentId)
           .eq('attendance_date', attendanceDate);
+
+        if (existingData && existingData.length > 0) {
+          triggerNotif('Attendance already marked for ' + student.name + ' on this date (ONE TIME ONLY).', true);
+          return;
+        }
 
         const { data, error } = await supabase
           .from('student_attendance')
@@ -257,7 +262,7 @@ export const Attendance = ({
       (sa.date === attendanceDate || sa.date === new Date(attendanceDate).toISOString().split('T')[0])
     );
     if (exists) {
-      triggerNotif('Attendance already marked for ' + staffMember.name + ' on this date.', true);
+      triggerNotif('Attendance already marked for ' + staffMember.name + ' on this date (ONE TIME ONLY).', true);
       return;
     }
 
@@ -279,12 +284,17 @@ export const Attendance = ({
       };
 
       if (supabase) {
-        // Clear previous entry
-        await supabase
+        // Direct DB check for safety:
+        const { data: existingData } = await supabase
           .from('staff_attendance')
-          .delete()
+          .select('id')
           .eq('staff_id', newRecord.staff_id)
           .eq('attendance_date', attendanceDate);
+
+        if (existingData && existingData.length > 0) {
+          triggerNotif('Staff attendance already marked for today (ONE TIME ONLY).', true);
+          return;
+        }
 
         const { data, error } = await supabase
           .from('staff_attendance')
@@ -337,7 +347,7 @@ export const Attendance = ({
       (ha.date === attendanceDate || ha.date === new Date(attendanceDate).toISOString().split('T')[0])
     );
     if (exists) {
-      triggerNotif('Hostel attendance already marked for ' + student.name + ' on this date.', true);
+      triggerNotif('Hostel attendance already marked for ' + student.name + ' on this date (ONE TIME ONLY).', true);
       return;
     }
 
@@ -357,11 +367,17 @@ export const Attendance = ({
       };
 
       if (supabase) {
-        await supabase
+        // Direct DB check for safety:
+        const { data: existingData } = await supabase
           .from('hostel_attendance')
-          .delete()
+          .select('id')
           .eq('student_id', student.studentId)
           .eq('attendance_date', attendanceDate);
+
+        if (existingData && existingData.length > 0) {
+          triggerNotif('Hostel attendance already marked for today (ONE TIME ONLY).', true);
+          return;
+        }
 
         const { data, error } = await supabase
           .from('hostel_attendance')

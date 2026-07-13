@@ -3208,8 +3208,27 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     );
 
     if (alreadyMarked) {
-      alert(`Attendance has already been marked for ${student.name} ${student.surname} today.`);
+      alert(`Attendance has already been marked for ${student.name} ${student.surname} today (ONE TIME ONLY).`);
       return { success: false, alreadyMarked: true };
+    }
+
+    if (supabase) {
+      try {
+        const { data: existingData, error: checkError } = await supabase
+          .from('student_attendance')
+          .select('id')
+          .eq('student_id', student.studentId)
+          .eq('attendance_date', today);
+
+        if (checkError) {
+          console.error('Error checking existing attendance:', checkError);
+        } else if (existingData && existingData.length > 0) {
+          alert(`Attendance has already been marked for ${student.name} ${student.surname} today (ONE TIME ONLY - DB verified).`);
+          return { success: false, alreadyMarked: true };
+        }
+      } catch (err) {
+        console.error('Exception checking attendance database:', err);
+      }
     }
     
     let ip = 'Unknown';
@@ -3396,7 +3415,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
           section: s.section,
           status: manualForm.status,
           date: manualForm.date,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: existing?.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           markedBy: currentUser?.role === 'admin' ? 'Admin' : 'Teacher',
           period: manualForm.period
         };
@@ -12027,9 +12046,30 @@ const StaffAttendanceModule = ({ staff, staffAttendance, setStaffAttendance, cur
 
     if (alreadyMarked) {
       setScanStatus('error');
-      setErrorMessage('Attendance already marked for today.');
+      setErrorMessage('Attendance already marked for today (ONE TIME ONLY).');
       setScanning(false);
       return;
+    }
+
+    if (supabase) {
+      try {
+        const { data: existingData, error: checkError } = await supabase
+          .from('staff_attendance')
+          .select('id')
+          .eq('staff_id', currentUser.id)
+          .eq('attendance_date', today);
+
+        if (checkError) {
+          console.error('Error checking existing staff attendance:', checkError);
+        } else if (existingData && existingData.length > 0) {
+          setScanStatus('error');
+          setErrorMessage('Attendance already marked for today (ONE TIME ONLY - DB verified).');
+          setScanning(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Exception checking staff attendance:', err);
+      }
     }
 
     const { ip, location } = await getIPAndLocation();
@@ -23290,8 +23330,27 @@ const HostelModule = ({
     );
 
     if (alreadyMarked) {
-      alert(`Hostel attendance has already been marked for this resident today.`);
+      alert(`Hostel attendance has already been marked for this resident today (ONE TIME ONLY).`);
       return;
+    }
+
+    if (supabase) {
+      try {
+        const { data: existingData, error: checkError } = await supabase
+          .from('hostel_attendance')
+          .select('id')
+          .eq('student_id', studentId)
+          .eq('attendance_date', today);
+
+        if (checkError) {
+          console.error('Error checking existing hostel attendance:', checkError);
+        } else if (existingData && existingData.length > 0) {
+          alert(`Hostel attendance has already been marked for this resident today (ONE TIME ONLY - DB verified).`);
+          return;
+        }
+      } catch (err) {
+        console.error('Exception checking hostel attendance database:', err);
+      }
     }
 
     const student = students.find((s: any) => s.studentId === studentId);
