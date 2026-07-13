@@ -21,6 +21,8 @@ import {
   FileText,
   Signature,
   Lock,
+  Unlock,
+  RotateCw,
   Plus,
   Trash2,
   Edit2,
@@ -3096,6 +3098,9 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
     }
   }, [currentUser, teacherAssignments]);
 
+  const [attendanceFacingMode, setAttendanceFacingMode] = useState<'environment' | 'user'>('environment');
+  const [scannerLocked, setScannerLocked] = useState(false);
+
   const [scanning, setScanning] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
 
@@ -3111,7 +3116,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
 
           html5QrCode = new Html5Qrcode("reader");
           await html5QrCode.start(
-            { facingMode: "environment" },
+            { facingMode: attendanceFacingMode },
             {
               fps: 10,
               qrbox: { width: 250, height: 250 },
@@ -3144,7 +3149,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
         }
       }
     };
-  }, [activeTab, currentUser, scanning]);
+  }, [activeTab, currentUser, scanning, attendanceFacingMode]);
 
   const takePhoto = async () => {
     try {
@@ -3576,7 +3581,24 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
 
       <AnimatePresence mode="wait">
         {activeTab === 'scan' && isManagementRole && (
-          <motion.div key="scan" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+          <motion.div key="scan" className="relative" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            {scannerLocked && (
+              <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-[9999] flex flex-col items-center justify-center p-4">
+                <div className="bg-white text-slate-800 border border-slate-200 rounded-2xl p-6 max-w-xs w-full text-center shadow-2xl flex flex-col items-center">
+                  <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-3">
+                    <Lock size={24} className="animate-pulse" />
+                  </div>
+                  <h3 className="text-base font-black uppercase tracking-tight text-slate-900">Kiosk Screen Locked</h3>
+                  <p className="text-slate-500 text-[11px] font-bold mt-1 uppercase tracking-wider">Tap below to unlock controls</p>
+                  <button
+                    onClick={() => setScannerLocked(false)}
+                    className="mt-4 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Unlock size={14} /> Unlock Screen
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-1 space-y-6">
                 <Card>
@@ -3616,6 +3638,7 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                       <div className="flex flex-col gap-4">
                         <div className="flex gap-2">
                           <button 
+                            disabled={scannerLocked}
                             onClick={async () => {
                               const photo = await takePhoto();
                               if (photo) {
@@ -3623,15 +3646,32 @@ const Attendance = ({ students, attendance, setAttendance, masterData, currentUs
                                 setTimeout(() => setScanResult(null), 3000);
                               }
                             }}
-                            className="flex-1 px-4 py-2 bg-secondary text-white rounded-xl text-xs font-bold shadow-lg shadow-secondary/20 hover:scale-105 transition-all flex items-center justify-center gap-2"
+                            className={`flex-1 px-4 py-2 bg-secondary text-white rounded-xl text-xs font-bold shadow-lg shadow-secondary/20 hover:scale-105 transition-all flex items-center justify-center gap-2 ${scannerLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
                             <Camera size={14} /> Capture
                           </button>
                           <button 
+                            disabled={scannerLocked}
                             onClick={() => setScanning(false)}
-                            className="px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-500/20 hover:scale-105 transition-all"
+                            className={`px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-red-500/20 hover:scale-105 transition-all ${scannerLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
                             Stop Camera
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => setAttendanceFacingMode(prev => prev === 'environment' ? 'user' : 'environment')}
+                            className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold border border-slate-200/50 transition-all flex items-center justify-center gap-2"
+                            title="Flip Camera"
+                          >
+                            <RotateCw size={14} className="text-slate-600" /> Flip Camera
+                          </button>
+                          <button 
+                            onClick={() => setScannerLocked(true)}
+                            className="flex-1 px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/50 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+                            title="Lock Screen"
+                          >
+                            <Lock size={14} className="text-amber-600" /> Lock Screen
                           </button>
                         </div>
                         {capturedPhoto && (
@@ -25284,7 +25324,7 @@ const IDCardsModule = ({
               )}
 
               {['student', 'teacher', 'hostel'].includes(activeTab) && (
-                <div className="pt-2 border-t border-slate-100">
+                <div className="pt-2 border-t border-slate-100 space-y-2">
                   <button
                     onClick={handleDownloadBatchPDF}
                     className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-3 px-4 rounded-xl font-bold text-xs shadow-md hover:scale-[1.01] transition-all cursor-pointer"
@@ -25292,6 +25332,24 @@ const IDCardsModule = ({
                   >
                     <Download size={14} />
                     Download Filtered Batch ({filteredPeople.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (filteredPeople.length === 0) {
+                        alert('No students or staff found matching the selected filter.');
+                        return;
+                      }
+                      setPrintPeople(filteredPeople);
+                      setTimeout(() => {
+                        window.print();
+                        setPrintPeople(null);
+                      }, 250);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/95 text-white py-3 px-4 rounded-xl font-bold text-xs shadow-md hover:scale-[1.01] transition-all cursor-pointer"
+                    title="Print all filtered cards natively at high resolution"
+                  >
+                    <Printer size={14} />
+                    Print Filtered Batch ({filteredPeople.length})
                   </button>
                 </div>
               )}
@@ -25398,9 +25456,19 @@ const IDCardsModule = ({
                 background-color: white !important;
                 margin: 0 !important;
                 padding: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 color-adjust: exact !important;
+              }
+              @page {
+                size: ${
+                  ['student', 'teacher', 'hostel'].includes(activeTab)
+                    ? (orientation === 'landscape' ? '86mm 54mm' : '54mm 86mm')
+                    : (['transfer', 'marksheet'].includes(activeTab) ? 'A4 portrait' : 'A4 landscape')
+                };
+                margin: 0 !important;
               }
               .print-only-container {
                 display: block !important;
@@ -25408,6 +25476,7 @@ const IDCardsModule = ({
                 left: 0 !important;
                 top: 0 !important;
                 width: 100% !important;
+                height: 100% !important;
                 background: white !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
@@ -25417,6 +25486,14 @@ const IDCardsModule = ({
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
                 color-adjust: exact !important;
+                text-rendering: optimizeLegibility !important;
+                -webkit-font-smoothing: antialiased !important;
+                -moz-osx-font-smoothing: grayscale !important;
+              }
+              .print-only-container img {
+                image-rendering: -webkit-optimize-contrast !important;
+                image-rendering: crisp-edges !important;
+                image-rendering: high-quality !important;
               }
               .print-page-break {
                 page-break-after: always !important;
@@ -25425,11 +25502,52 @@ const IDCardsModule = ({
                 display: flex !important;
                 justify-content: center !important;
                 align-items: center !important;
-                min-height: 100vh !important;
                 box-sizing: border-box !important;
-                padding: 20px !important;
                 background-color: white !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                overflow: hidden !important;
               }
+              /* Specific styles for ID Cards (CR80) */
+              ${['student', 'teacher', 'hostel'].includes(activeTab) ? `
+                .print-page-break > div {
+                  display: flex !important;
+                  justify-content: center !important;
+                  align-items: center !important;
+                  width: 100% !important;
+                  height: 100% !important;
+                }
+                .print-page-break > div > div {
+                  width: ${orientation === 'landscape' ? '86mm' : '54mm'} !important;
+                  height: ${orientation === 'landscape' ? '54mm' : '86mm'} !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  border: none !important;
+                  border-radius: 0 !important;
+                  box-shadow: none !important;
+                  zoom: ${orientation === 'landscape' ? '0.64' : '0.63'} !important;
+                  position: relative !important;
+                }
+              ` : `
+                /* Specific styles for Certificates and Marksheets (A4) */
+                .print-page-break > div {
+                  display: flex !important;
+                  justify-content: center !important;
+                  align-items: center !important;
+                  width: 100% !important;
+                  height: 100% !important;
+                }
+                .print-page-break > div > div {
+                  margin: 0 !important;
+                  border: none !important;
+                  box-shadow: none !important;
+                  border-radius: 0 !important;
+                  /* Keep the aspect ratio but fit within A4 */
+                  ${activeTab === 'marksheet' ? 'zoom: 0.78 !important;' : 'zoom: 0.95 !important;'}
+                }
+              `}
             }
             @media screen {
               .print-only-container {
@@ -25505,18 +25623,18 @@ const ExaminationModule = ({
     subjects: masterData?.subjects?.length > 0 ? masterData.subjects : ['English', 'Mathematics', 'Science', 'Social Studies', 'Hindi']
   };
 
-  const teacherAssignedClasses = currentUser?.role === 'teacher' 
+  const teacherAssignedClasses = (currentUser?.role === 'teacher' || currentUser?.role === 'staff') 
     ? (teacherAssignments || []).filter((a: any) => 
         a.classTeacher === currentUser.name || 
         (a.subjectTeachers || []).some((st: any) => st.teacher === currentUser.name)
       )
     : [];
 
-  const availableClasses = (currentUser?.role === 'admin' || currentUser?.role === 'super-admin')
+  const availableClasses = (currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || (currentUser?.role === 'staff' && teacherAssignedClasses.length === 0))
     ? (masterData?.classes || [])
     : [...new Set((teacherAssignedClasses || []).map((a: any) => a.class))];
 
-  const availableSections = (currentUser?.role === 'admin' || currentUser?.role === 'super-admin')
+  const availableSections = (currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || (currentUser?.role === 'staff' && teacherAssignedClasses.length === 0))
     ? (masterData?.sections || [])
     : [...new Set((teacherAssignedClasses || []).filter((a: any) => !reportFilters.class || a.class === reportFilters.class).map((a: any) => a.section))];
 
@@ -26090,7 +26208,7 @@ const ExaminationModule = ({
           { id: 'stats', label: 'Statistics', icon: BarChart3, adminOnly: true }
         ].filter(tab => {
           if (tab.adminOnly && currentUser?.role !== 'admin' && currentUser?.role !== 'super-admin') return false;
-          if (tab.teacherOnly && currentUser?.role !== 'admin' && currentUser?.role !== 'super-admin' && currentUser?.role !== 'teacher') return false;
+          if (tab.teacherOnly && currentUser?.role !== 'admin' && currentUser?.role !== 'super-admin' && currentUser?.role !== 'teacher' && currentUser?.role !== 'staff') return false;
           return true;
         }).map((tab) => (
           <button
@@ -26328,7 +26446,7 @@ const ExaminationModule = ({
                   <div className="w-36">
                     <Select 
                       label="Section" 
-                      options={(currentUser?.role === 'admin' || currentUser?.role === 'super-admin') ? (masterData?.sections || []) : [...new Set((teacherAssignedClasses || []).filter((a: any) => a.class === marksFilters.class).map((a: any) => a.section))]} 
+                      options={(currentUser?.role === 'admin' || currentUser?.role === 'super-admin' || (currentUser?.role === 'staff' && teacherAssignedClasses.length === 0)) ? (masterData?.sections || []) : [...new Set((teacherAssignedClasses || []).filter((a: any) => a.class === marksFilters.class).map((a: any) => a.section))]} 
                       value={marksFilters.section}
                       onChange={(e: any) => setMarksFilters({...marksFilters, section: e.target.value})}
                     />
