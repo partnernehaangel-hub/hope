@@ -7174,8 +7174,6 @@ const FeeManagement = ({
       return;
     }
 
-    setIsFeeCollecting(true);
-
     const academicYearStartMonth = 'April';
     const quarterlyMonths = ['April', 'July', 'October', 'January'];
     const halfYearlyMonths = ['April', 'October'];
@@ -7228,6 +7226,8 @@ const FeeManagement = ({
         return;
       }
     }
+
+    setIsFeeCollecting(true);
 
     // Distribute payment across fee types in order
     let remainingPayment = amountToCollect;
@@ -7724,8 +7724,8 @@ const FeeManagement = ({
                   return (
                     <button 
                       onClick={handleCollectFee}
-                      disabled={!!unpaidPrev || isFeeCollecting}
-                      className={`btn-primary px-8 py-3 flex items-center gap-2 ${(unpaidPrev || isFeeCollecting) ? 'opacity-50 cursor-not-allowed bg-slate-400 hover:bg-slate-400 border-none shadow-none' : ''}`}
+                      disabled={isFeeCollecting}
+                      className={`btn-primary px-8 py-3 flex items-center gap-2 ${isFeeCollecting ? 'opacity-50 cursor-not-allowed bg-slate-400 hover:bg-slate-400 border-none shadow-none' : ''}`}
                     >
                       {isFeeCollecting ? (
                         <>
